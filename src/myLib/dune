@@ -1,0 +1,13 @@
+(library
+ (name mylib)
+ (libraries gmp))
+
+(ocamllex
+(modules polyLexer))
+
+(menhir
+(modules polyParse))
+
+(env
+ (dev
+   (flags (:standard -warn-error -A))))

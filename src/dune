@@ -1,0 +1,5 @@
+(executable
+ (name poly)
+ (libraries mylib)
+ (promote (until-clean) (into ..))
+ (modules poly))
