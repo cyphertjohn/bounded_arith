@@ -1,7 +1,7 @@
 /* File parser.mly */
         %{
-            let negate_mon (Sigs.Coef c, x) = 
-              (Sigs.Coef ("-" ^ c), x)
+            let negate_mon (Sigs.Polynomial.Coef c, x) = 
+              (Sigs.Polynomial.Coef ("-" ^ c), x)
 
             let negate_first l =
               match l with
@@ -18,10 +18,10 @@
         %right POWER
         %nonassoc UMINUS        */
         %start main             /* the entry point */
-        %type <string Sigs.polynomial> main
+        %type <string Sigs.Polynomial.polynomial> main
         %%
         main:
-            poly EOL                { Sigs.Sum $1 }
+            poly EOL                { Sigs.Polynomial.Sum $1 }
         ;
         poly:
             monomial PLUS poly              { $1 :: $3 }
@@ -30,10 +30,10 @@
           | monomial                        { [$1] }
         ;
         monomial:
-            INT TIMES monic_mon             { (Sigs.Coef ($1), Sigs.Prod $3) }
-          | INT monic_mon                   { (Sigs.Coef ($1), Sigs.Prod $2) }
-          | monic_mon                       { (Sigs.Coef ("1"), Sigs.Prod $1)}
-          | INT                             { (Sigs.Coef ($1), Sigs.Prod []) }
+            INT TIMES monic_mon             { (Sigs.Polynomial.Coef ($1), Sigs.Polynomial.Prod $3) }
+          | INT monic_mon                   { (Sigs.Polynomial.Coef ($1), Sigs.Polynomial.Prod $2) }
+          | monic_mon                       { (Sigs.Polynomial.Coef ("1"), Sigs.Polynomial.Prod $1)}
+          | INT                             { (Sigs.Polynomial.Coef ($1), Sigs.Polynomial.Prod []) }
         ;
         monic_mon:
             var_power TIMES monic_mon       { $1 :: $3 }
@@ -41,6 +41,6 @@
           | var_power                       { [$1] }
         ;
         var_power:
-            VAR POWER INT                   { Sigs.Exp ( $1, int_of_string $3) }
-          | VAR                             { Sigs.Exp ( $1, 1) } 
+            VAR POWER INT                   { Sigs.Polynomial.Exp ( $1, int_of_string $3) }
+          | VAR                             { Sigs.Polynomial.Exp ( $1, 1) } 
         ;

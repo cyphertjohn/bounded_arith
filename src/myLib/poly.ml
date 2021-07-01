@@ -1,4 +1,5 @@
 open Sigs
+open Sigs.Polynomial
 
 module MakeMon (C : Coefficient) = struct
 
@@ -367,35 +368,10 @@ module Make (M : sig
 
 end
 
-module FloatC : Coefficient = struct 
-  type coef = float 
-  let addc = (+.) 
-  let mulc = ( *. ) 
-  let divc = (/.) 
-  let is_zero = ((=) 0.) 
-  let is_one = ((=) 1.) 
-  let to_string_c = string_of_float 
-  let from_string_c = float_of_string 
-  let cmp = compare 
-end
 
-module MpqfC : Coefficient = struct 
-  type coef = Mpqf.t
-  let addc = Mpqf.add 
-  let mulc = Mpqf.mul
-  let divc = Mpqf.div
-  let is_zero c = (Mpqf.cmp_int c 0) = 0
-  let is_one c = (Mpqf.cmp_int c 1) = 0
-  let to_string_c = Mpqf.to_string
-  let from_string_c = Mpqf.of_string
-  let cmp = Mpqf.cmp
-end
+module Mon = MakeMon (Sigs.Q)
 
-module C = MpqfC
-
-module Mon = MakeMon (C)
-
-module Polynomial = Make (Mon)
+module P = Make (Mon)
 
 module Eliminate = struct
 
@@ -458,14 +434,14 @@ module Eliminate = struct
 
   let eliminate polys remove =
     set_var_order polys remove;
-    Polynomial.set_ord (elimination_order remove);
-    let g = Polynomial.improved_buchberger polys in
+    P.set_ord (elimination_order remove);
+    let g = P.improved_buchberger polys in
     List.filter (fun poly -> not (List.exists (fun v -> poly_cont_var v poly) remove)) g
 
   let affine_hull polys = 
     set_var_order polys [];
-    Polynomial.set_ord grevlex_ord;
-    let g = Polynomial.improved_buchberger polys in
-    List.filter Polynomial.is_lin g
+    P.set_ord grevlex_ord;
+    let g = P.improved_buchberger polys in
+    List.filter P.is_lin g
 
 end

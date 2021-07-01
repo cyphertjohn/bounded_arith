@@ -1,12 +1,13 @@
 (library
  (name mylib)
- (libraries gmp))
+ (libraries gmp)
+ (modules (:standard \ eqRewriter)))
 
 (ocamllex
-(modules polyLexer))
+(modules polyLexer expLexer))
 
 (menhir
-(modules polyParse))
+(modules polyParse expParse))
 
 (env
  (dev
