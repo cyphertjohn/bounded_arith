@@ -1,10 +1,10 @@
 open Mylib.Expr
 
-let p1 = from_string "x^2y - 1"
-let p2 = from_string "xy^2 - x"
-let p3 = from_string "x^3 - 2xy"
-let p4 = from_string "x^2y-2y^2+x"
+let t = from_string "a2-floor(a*b/e)"
+let t1 = from_string "e1 - e - a"
+let t2 = from_string "b1 - b - a2"
+let t3 = from_string "floor(v*b/e) - floor(v*b1/e1)"
 
-let print_list l = List.iter (fun poly -> print_endline (to_string poly)) l;;
+let vars_to_keep = ["v"; "a"; "e"; "b"]
 
-print_list [p1; p2; p3];;
+(*let (polys, term_map) = Mylib.EqRewriter.rewrite [t;t1;t2;t3] vars_to_keep*)

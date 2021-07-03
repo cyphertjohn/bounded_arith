@@ -91,7 +91,10 @@ module MakeMon (C : Coefficient) = struct
 
   let ord = ref lex_ord
 
-  let mon_ord (Coef c1, m1) (Coef c2, m2) = if !ord m1 m2 = 0 then C.cmp c1 c2 else !ord m1 m2
+  let mon_ord (Coef c1, m1) (Coef c2, m2) = 
+    let order = !ord m1 m2 in
+    if order = 0 then C.cmp c1 c2 else order
+  
 end
 
 

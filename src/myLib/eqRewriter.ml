@@ -4,80 +4,209 @@ open Poly
 
 module S = Map.Make(String)
 
-let purify e =
-  match e with
-  | Coe x -> Coef x
-  | Var x -> Exp (x, 1)
+type 'a fun_app = Recip of ('a polynomial) | Floo of ('a polynomial)
 
-module Eliminate = struct
+let curr = ref 0
+let new_var () = 
+  let x = "x_"^ (string_of_int !curr) in
+  curr := !curr + 1;
+  x
 
-  let order = ref (let default = ref [] in let () = String.iter (fun c -> default := (Char.escaped c):: !default) "zyxwvutsrqponmlkjihgfedcba" in !default)
-
-  let compare_var_s s1 s2 = 
-    if (s1 = s2) then 0
-    else if (List.find (fun v -> v = s1 || v = s2) !order) = s1 then (-1)
-    else 1
-
-  let compare_var (Exp (s1, e1)) (Exp (s2, e2)) = 
-    if (s1 = s2) then compare e1 e2
-    else compare_var_s s1 s2
-  
-  let multi_deg (Prod a) =
-    let find_deg v = 
-      match List.find_opt (fun (Exp (x, _)) -> x = v) a with
-      | None -> 0
-      | Some (Exp (_, c)) -> c
+let purify ex =
+  let map_union _ _ _ = failwith "Duplicated fresh variable" in
+  let rec aux e = 
+    match e with
+    | Coe x -> (Sum ([(Coef x, Prod [])]), ([], S.empty))
+    | Var x -> (Sum ([(Coef (Sigs.Q.from_string_c "1"), Prod[Exp (x, 1)])]), ([], S.empty))
+    | Add l -> 
+      let pure_l, new_polys_map = List.split (List.map aux l) in
+      let new_polys, new_map = List.split new_polys_map in
+      (List.fold_left P.add (List.hd pure_l) (List.tl pure_l), (List.concat new_polys, List.fold_left (S.union map_union) S.empty new_map))
+    | Mult l -> 
+      let pure_l, new_polys_map = List.split (List.map aux l) in
+      let new_polys, new_map = List.split new_polys_map in
+      (List.fold_left P.mult (List.hd pure_l) (List.tl pure_l), (List.concat new_polys, List.fold_left (S.union map_union) S.empty new_map))
+    | Div (n, d) -> 
+      let (pure_n, (num_polys, num_map)) = aux n in
+      let (pure_d, (den_polys, den_map)) = aux d in
+      let new_variable = new_var () in
+      let new_var_poly = Sum ([(Coef (Sigs.Q.from_string_c "1"), Prod[Exp (new_variable, 1)])]) in
+      let new_poly = P.add (P.mult new_var_poly pure_d) P.minus_1 in
+      (P.mult pure_n new_var_poly, (new_poly :: (num_polys @ den_polys), S.add new_variable (Recip pure_d) (S.union map_union num_map den_map)))
+    | Floor x -> 
+      let (pure_x, (x_polys, x_map)) = aux x in
+      let new_variable = new_var () in
+      (Sum ([(Coef (Sigs.Q.from_string_c "1"), Prod[Exp (new_variable, 1)])]), (x_polys, S.add new_variable (Floo pure_x) x_map))
+    | Pow (base, exp) ->
+      let (pure_base, (base_polys, base_map)) = aux base in
+      if exp >= 0 then (P.exp_poly pure_base exp, (base_polys, base_map))
+      else
+        let neg_exp = (-1) * exp in
+        let new_variable = new_var () in
+        let new_var_poly = Sum ([(Coef (Sigs.Q.from_string_c "1"), Prod[Exp (new_variable, 1)])]) in
+        let mul = P.mult new_var_poly pure_base in
+        let new_poly = P.add mul P.minus_1 in
+        let res = (P.exp_poly new_var_poly neg_exp, (new_poly :: base_polys, S.add new_variable (Recip pure_base) base_map)) in
+        res
     in
-    List.map find_deg !order
+  let res_poly, (new_const, term_map) = aux ex in
+  res_poly :: new_const, term_map
 
-  let grevlex_ord a b = 
-    let (adeg, bdeg) = (multi_deg a, multi_deg b) in
-    let (tota, totb) = (List.fold_left (+) 0 adeg, List.fold_left (+) 0 bdeg) in
-    if tota = totb then (
-      try (-1) * (List.find ((<>) 0) (List.rev (List.map2 (-) adeg bdeg)))
-      with Not_found -> 0)
-    else compare tota totb
-    
-  let weight_order a b weight ord =
-    let (adeg, bdeg) = (multi_deg a, multi_deg b) in
-    let (ares, bres) = (List.fold_left2 (fun acc x y -> acc + (x * y)) 0 weight adeg, List.fold_left2 (fun acc x y -> acc + (x * y)) 0 weight bdeg) in
-    if ares = bres then ord a b
-    else compare ares bres
-    
-  let elimination_order vars_to_remove a b = 
-    let weight = List.map (fun x -> if (List.exists ((=) x) vars_to_remove) then 1 else 0) !order in
-    weight_order a b weight grevlex_ord
+let var_map_to_string var_map = 
+  let mapping_to_string v fun_map acc = 
+    let map_str =
+      match fun_map with
+      | Recip poly -> v ^ " -> " ^ "(" ^ (P.to_string poly) ^ ")^-1"
+      | Floo poly -> v ^ " -> " ^ "floor(" ^ (P.to_string poly) ^ ")"
+    in
+    map_str :: acc
+  in
+  String.concat "\n" (S.fold mapping_to_string var_map [])
 
+
+let get_vars (Sum poly) = 
   let get_vars_m (_, Prod mon) = 
     List.map (fun (Exp (v, _)) -> v) mon
+  in
+  List.concat (List.map get_vars_m poly)
 
-  let set_var_order polys vars =
-    let get_vars (Sum poly) = List.concat (List.map get_vars_m poly) in
-    let variables = List.concat (List.map get_vars polys) in
-    let rec remove_dupes vs acc =
-      match vs with
-      | [] -> acc
-      | v :: rest ->
-        match (List.find_opt ((=) v) vars, List.find_opt ((=) v) acc)  with
-        | (None, None) -> remove_dupes rest (v :: acc)
-        | _ -> remove_dupes rest acc
+let term_vars map = 
+  let folder v term vars =
+    match term with
+    | Recip p | Floo p -> v :: (get_vars p) @ vars
+  in
+  S.fold folder map []
+
+let calc_keep_vars term_map vars_to_keep =
+  let rec aux v term acc = 
+    if S.mem v acc then acc
+    else
+      match term with
+      | Recip p | Floo p ->
+        let vars = get_vars p in
+        let ref_acc = ref acc in
+        let keep_variable v =
+          if S.mem v acc then S.find v !ref_acc
+          else if not (S.mem v term_map) && (List.mem v vars_to_keep) then true
+          else if not (S.mem v term_map) then false
+          else
+            let new_acc = aux v (S.find v term_map) !ref_acc in
+            ref_acc := new_acc;
+            S.find v !ref_acc
+        in
+        let keep = List.for_all keep_variable vars in
+        S.add v keep !ref_acc
+  in
+  S.fold aux term_map S.empty
+
+
+let calc_deg_map term_map =
+  let rec deg_mon (_, Prod m) =
+    let deg_var_exp (Exp (v, d)) = 
+      d * (deg_var v)
     in
-    order := (List.sort compare vars) @ (List.sort compare (remove_dupes variables []))
+    List.fold_left (+) 0 (List.map deg_var_exp m)
+  and deg_var v =  
+    match (S.find_opt v term_map) with
+    | None -> 1
+    | Some (Recip p) | Some (Floo p) -> deg_poly p
+  and deg_poly (Sum p) =
+    List.fold_left (max) (-1) (List.map deg_mon p)
+  in
+  let dummy v _ = deg_var v in
+  S.mapi dummy term_map
+    
 
-  let mon_cont_var v (_, Prod mon) = List.exists (fun (Exp (x, _)) -> x = v) mon
+let effective_deg_ord deg_map keep_map (Prod a) (Prod b) =
+  let folder (rem_deg, keep_deg) (Exp (v, d)) = 
+    if S.find v keep_map then 
+      if S.mem v deg_map then (rem_deg, keep_deg + d * (S.find v deg_map))
+      else (rem_deg, keep_deg + d)
+    else
+      if S.mem v deg_map then (rem_deg + d * (S.find v deg_map), keep_deg)
+      else (rem_deg + d, keep_deg)
+  in
+  let (a_deg, b_deg) = (List.fold_left folder (0, 0) a, List.fold_left folder (0, 0) b) in
+  if (fst a_deg = fst b_deg) then 
+    if (snd a_deg = snd b_deg) then Mon.lex_ord (Prod a) (Prod b)
+    else compare (snd a_deg) (snd b_deg)
+  else compare (fst a_deg) (fst b_deg)
 
-  let poly_cont_var v (Sum poly) = List.exists (mon_cont_var v) poly
+let unpurify polys term_map =
+  let rec make_subsituter var term acc =
+    let (_, handled) = acc var in
+    if handled then acc
+    else
+      let monomial_sub (cont, l) (Coef x, Prod m) =
+        let sub_var_pow (cont1, l1) (Exp(v, e)) =
+          let (v_sub, v_handled) = cont1 v in
+          if v_handled then (cont1, (Pow (v_sub, e)) :: l1)
+          else
+            if not (S.mem v term_map) then
+              let new_fun = function variable -> if v = variable then (Var v, handled) else cont1 variable in
+              (new_fun, (Pow (Var v, e)) :: l1)
+            else
+              let new_sub = make_subsituter v (S.find v term_map) cont1 in
+              let (sub_expr, _) = new_sub v in
+              (new_sub, (Pow (sub_expr, e)) :: l1)
+        in
+        let (new_cont, monomial_subs) = List.fold_left sub_var_pow (cont, []) m in
+        (new_cont, (Mult ((Coe x) :: monomial_subs)) :: l) 
+      in
+      match term with
+      | Floo (Sum p) ->
+        let (new_cont, p_exprs) = List.fold_left monomial_sub (acc, []) p in
+        let new_term = Floor (Add p_exprs) in
+        (function variable -> if variable = var then new_term, true else new_cont variable)
+      | Recip (Sum p) ->
+        let (new_cont, p_exprs) = List.fold_left monomial_sub (acc, []) p in
+        let new_term = Pow ((Add p_exprs), -1) in
+        (function variable -> if variable = var then new_term, true else new_cont variable)
+    in
+  let substituter = S.fold make_subsituter term_map (function _ -> (Coe (Mon.from_string_c "0"), false)) in
+  let sub_poly (Sum p) = 
+    let sub_var_pow (Exp (v, e)) =
+      Pow(fst (substituter v), e)
+    in
+    let sub_mon (Coef c, Prod m) = 
+      Mult (Coe c :: List.map sub_var_pow m)
+    in
+    Expr.simplify (Add (List.map sub_mon p))
+  in
+  List.map sub_poly polys
 
-  let eliminate polys remove =
-    set_var_order polys remove;
-    Polynomial.set_ord (elimination_order remove);
-    let g = Polynomial.improved_buchberger polys in
-    List.filter (fun poly -> not (List.exists (fun v -> poly_cont_var v poly) remove)) g
+let update_map g_basis term_map = 
+  let reduce term =
+    match term with
+    | Floo p -> 
+      let red = snd (P.division g_basis p) in
+      Floo red
+    | Recip p ->
+      let red = snd (P.division g_basis p) in
+      Recip red
+  in
+  let reduced_map = S.map reduce term_map in
+  reduced_map 
 
-  let affine_hull polys = 
-    set_var_order polys [];
-    Polynomial.set_ord grevlex_ord;
-    let g = Polynomial.improved_buchberger polys in
-    List.filter Polynomial.is_lin g
 
-end
+
+let rewrite terms vars_to_keep = 
+  P.set_ord (Mon.lex_ord);
+  let foldr (old_pol, old_tmap) term =
+    let (pols, tmap) = purify term in
+    (old_pol @ pols, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap)
+  in
+  let polys, term_map = List.fold_left foldr ([], S.empty) terms in
+  let deg_map = calc_deg_map term_map in
+  let folder acc v =
+    if S.mem v acc then acc
+    else if List.mem v vars_to_keep then S.add v true acc
+    else S.add v false acc
+  in
+  let tvars = term_vars term_map in
+  let keep_map = List.fold_left folder (calc_keep_vars term_map vars_to_keep) ((List.concat (List.map get_vars polys)) @ tvars) in
+  P.set_ord (effective_deg_ord deg_map keep_map);
+  let g_basis = P.improved_buchberger polys in
+  g_basis
+
+  

@@ -1,7 +1,6 @@
 (library
  (name mylib)
- (libraries gmp)
- (modules (:standard \ eqRewriter)))
+ (libraries gmp))
 
 (ocamllex
 (modules polyLexer expLexer))

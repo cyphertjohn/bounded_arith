@@ -351,7 +351,7 @@ let rec to_string e =
   match e with
   | Coe x -> Sigs.Q.to_string_c x
   | Var x -> x
-  | Add l -> "(" ^ (String.concat " + " (List.map to_string l)) ^ ")"
+  | Add l -> (String.concat " + " (List.map to_string l))
   | Mult l -> (String.concat " * " (List.map to_string l))
   | Div (n, d) -> "(" ^ (to_string n) ^ ")/(" ^ (to_string d) ^ ")"
   | Pow (b, e) -> "(" ^ (to_string b) ^ ")^" ^ (string_of_int e)
