@@ -6,6 +6,11 @@ module S = Map.Make(String)
 
 type 'a fun_app = Recip of ('a polynomial) | Floo of ('a polynomial)
 
+let sub_fun_app_var var_to_replace poly_to_replace_with term = 
+  match term with
+  | Recip p -> Recip (P.substitute (var_to_replace , poly_to_replace_with) p)
+  | Floo p -> Floo (P.substitute (var_to_replace , poly_to_replace_with) p)
+
 let curr = ref 0
 let new_var () = 
   let x = "x_"^ (string_of_int !curr) in
@@ -143,7 +148,7 @@ let unpurify polys term_map =
           if v_handled then (cont1, (Pow (v_sub, e)) :: l1)
           else
             if not (S.mem v term_map) then
-              let new_fun = function variable -> if v = variable then (Var v, handled) else cont1 variable in
+              let new_fun = function variable -> if v = variable then (Var v, true) else cont1 variable in
               (new_fun, (Pow (Var v, e)) :: l1)
             else
               let new_sub = make_subsituter v (S.find v term_map) cont1 in
@@ -163,7 +168,16 @@ let unpurify polys term_map =
         let new_term = Pow ((Add p_exprs), -1) in
         (function variable -> if variable = var then new_term, true else new_cont variable)
     in
-  let substituter = S.fold make_subsituter term_map (function _ -> (Coe (Mon.from_string_c "0"), false)) in
+  let all_poly_vars = List.concat (List.map get_vars polys) in
+  let pure_vars = List.filter (fun v -> not (S.mem v term_map)) all_poly_vars in
+  let rec remove_dupes vs acc =
+    match vs with
+    | [] -> acc
+    | v :: rest -> if List.mem v acc then remove_dupes rest acc
+                   else remove_dupes rest (v :: acc)
+  in
+  let init_subst = List.fold_left (fun acc v -> function variable -> if v = variable then (Var v, true) else acc variable) (function _ -> (Coe (Mon.from_string_c "0"), false)) (remove_dupes pure_vars []) in
+  let substituter = S.fold make_subsituter term_map init_subst in
   let sub_poly (Sum p) = 
     let sub_var_pow (Exp (v, e)) =
       Pow(fst (substituter v), e)
@@ -175,7 +189,7 @@ let unpurify polys term_map =
   in
   List.map sub_poly polys
 
-let update_map g_basis term_map = 
+let update_map g_basis term_map polys t_p = 
   let reduce term =
     match term with
     | Floo p -> 
@@ -186,27 +200,68 @@ let update_map g_basis term_map =
       Recip red
   in
   let reduced_map = S.map reduce term_map in
-  reduced_map 
+  let bindings = fst (List.split (S.bindings reduced_map)) in
+  let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
+  let pairs = get_pairs bindings in
+  let rec aux rm_pairs (old_polys, old_tp, old_map) =
+    match rm_pairs with
+    | [] -> (old_polys, old_tp, old_map)
+    | (x_i, x_j) :: l ->
+      match (S.find_opt x_i old_map, S.find_opt x_j old_map) with
+      | Some (Recip t_i), Some (Recip t_j) | Some (Floo t_i), Some (Floo t_j) -> 
+        let remove_var_sub rem sub polys t_prime map =
+          let rem_map = S.remove rem map in
+          let sub_poly = Sum [Coef (Mon.from_string_c "1"), Prod[Exp(sub, 1)]] in
+          let new_map = S.map (sub_fun_app_var rem sub_poly) rem_map in
+          let new_polys = List.map (P.substitute (rem, sub_poly)) polys in
+          let new_t_prime = P.substitute (rem, sub_poly) t_prime in
+          (new_polys, new_t_prime, new_map)
+        in
+        if (P.compare t_i t_j) = 0 then aux l (remove_var_sub x_i x_j old_polys old_tp old_map) (*Potentially cheaper equality check*)
+        else
+          let subtract_poly = P.add t_i (P.mult P.minus_1 t_j) in
+          let sub_rem = snd (P.division g_basis subtract_poly) in
+          if P.is_zero sub_rem then aux l (remove_var_sub x_i x_j old_polys old_tp old_map)
+          else aux l (old_polys, old_tp, old_map)
+      | _ -> aux l (old_polys, old_tp, old_map)
+  in
+  aux pairs (polys, t_p, reduced_map)
 
-
-
-let rewrite terms vars_to_keep = 
+let rewrite terms vars_to_keep t = 
   P.set_ord (Mon.lex_ord);
   let foldr (old_pol, old_tmap) term =
     let (pols, tmap) = purify term in
     (old_pol @ pols, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap)
   in
-  let polys, term_map = List.fold_left foldr ([], S.empty) terms in
-  let deg_map = calc_deg_map term_map in
-  let folder acc v =
+  let (t_and_polys, term_map) = List.fold_left foldr ([], S.empty) (t :: terms) in
+  let (t_poly, polys) = match t_and_polys with
+    | t_p :: rest -> (t_p, rest)
+    | [] -> failwith "t has become empty"
+  in
+  let keep_folder acc v =
     if S.mem v acc then acc
     else if List.mem v vars_to_keep then S.add v true acc
     else S.add v false acc
   in
-  let tvars = term_vars term_map in
-  let keep_map = List.fold_left folder (calc_keep_vars term_map vars_to_keep) ((List.concat (List.map get_vars polys)) @ tvars) in
-  P.set_ord (effective_deg_ord deg_map keep_map);
-  let g_basis = P.improved_buchberger polys in
-  g_basis
+  let rec loop old_bind new_bind t_map tp ps =
+    print_endline "Curr Map";
+    print_endline (var_map_to_string t_map);
+    print_endline "";
+    print_endline ("Curr t : " ^ (P.to_string tp));
+    print_endline "";
+    print_endline ("Curr Polys");
+    print_endline (String.concat "\n" (List.map P.to_string ps));
+    print_endline "\n";
+    if (List.sort compare old_bind) = (List.sort compare new_bind) then List.hd (unpurify [tp] t_map)
+    else
+      let deg_map = calc_deg_map term_map in
+      let tvars = term_vars term_map in
+      let keep_map = List.fold_left keep_folder (calc_keep_vars term_map vars_to_keep) ((List.concat (List.map get_vars polys)) @ tvars) in
+      P.set_ord (effective_deg_ord deg_map keep_map);
+      let g_basis = P.improved_buchberger polys in
+      let (new_polys, new_t, new_map) = update_map g_basis t_map ps tp in
+      loop new_bind (fst (List.split (S.bindings new_map))) new_map new_t new_polys
+  in
+  loop [] (fst (List.split (S.bindings term_map))) term_map t_poly polys
 
   
