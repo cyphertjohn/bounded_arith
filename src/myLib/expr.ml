@@ -348,13 +348,90 @@ let distribute a =
 let from_string s = distribute (qify (ExpParse.main ExpLexer.token (Lexing.from_string s)))
 
 let rec to_string e = 
-  match e with
-  | Coe x -> Sigs.Q.to_string_c x
-  | Var x -> x
-  | Add l -> (String.concat " + " (List.map to_string l))
-  | Mult l -> (String.concat " * " (List.map to_string l))
-  | Div (n, d) -> "(" ^ (to_string n) ^ ")/(" ^ (to_string d) ^ ")"
-  | Pow (b, e) -> "(" ^ (to_string b) ^ ")^" ^ (string_of_int e)
-  | Floor x -> "floor(" ^ (to_string x) ^ ")"
-
-
+  let rec add_to_string l = 
+    if List.length l = 0 then "", false
+    else
+      let folder (acc, first) a = 
+        let (str, negative) =
+          match a with
+          | Coe x -> coe_to_string x
+          | Var x -> var_to_string x
+          | Add l1 -> add_to_string l1
+          | Mult l1 -> mult_to_string l1
+          | Div (n, d) -> div_to_string n d
+          | Pow (b, e) -> pow_to_string b e
+          | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+        in
+        if first && negative then
+          "-" ^ str, false
+        else if first then str, false
+        else if negative then acc ^ " - " ^ str, false
+        else acc ^ " + " ^ str, false
+      in
+      fst (List.fold_left folder ("", true) l), false
+  and mult_to_string l =
+    let folder (acc, parity) a = 
+      let (str, negative) =
+        match a with
+        | Coe x -> 
+          if (Sigs.Q.cmp x (Sigs.Q.from_string_c "1")) = 0 then "", false
+          else if (Sigs.Q.cmp x (Sigs.Q.from_string_c "-1")) = 0 then "", true
+          else
+            coe_to_string x
+        | Var x -> var_to_string x
+        | Add l1 -> let (s, n) = add_to_string l1 in "(" ^ s ^ ")", n
+        | Mult l1 -> mult_to_string l1
+        | Div (n, d) -> div_to_string n d
+        | Pow (b, e) -> pow_to_string b e
+        | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+      in
+      (acc ^ str, parity <> negative)
+    in
+    List.fold_left folder ("", false) l
+  and coe_to_string x =
+    if Sigs.Q.cmp x (Sigs.Q.from_string_c "0") < 0 then (Sigs.Q.to_string_c (Sigs.Q.mulc (Sigs.Q.from_string_c "-1") x), true)
+    else (Sigs.Q.to_string_c x, false)
+  and var_to_string v = v, false
+  and div_to_string n d =
+    let (n_str, nneg) =
+      match n with 
+      | Add l -> "(" ^ (fst (add_to_string l)) ^ ")", false
+      | Coe x -> coe_to_string x
+      | Var x -> var_to_string x
+      | Mult l -> let m_s, m_n = mult_to_string l in "(" ^ m_s ^ ")", m_n
+      | Pow (b, e) -> pow_to_string b e
+      | Div (np, dp) -> div_to_string np dp
+      | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+    in
+    let (d_str, dneg) =
+      match d with 
+      | Add l -> "(" ^ (fst (add_to_string l)) ^ ")", false
+      | Coe x -> coe_to_string x
+      | Var x -> var_to_string x
+      | Mult l -> let m_s, m_n = mult_to_string l in "(" ^ m_s ^ ")", m_n
+      | Pow (b, e) -> pow_to_string b e
+      | Div (np, dp) -> let d_s, d_n = div_to_string np dp in "(" ^ d_s ^ ")", d_n
+      | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+    in
+    n_str ^ "/" ^ d_str, nneg <> dneg
+  and pow_to_string b e =
+    match b with
+    | Coe x -> 
+      let (x_s, x_n) = coe_to_string x in
+      if x_n then "(-" ^ x_s ^ ")^" ^ (string_of_int e), false
+      else x_s ^ "^" ^ (string_of_int e), false
+    | Var x -> (fst (var_to_string x)) ^ "^" ^ (string_of_int e), false
+    | _ -> "(" ^ (to_string b) ^ ")^" ^ (string_of_int e), false
+  in
+  let (str, negative) = 
+    match e with
+    | Coe x -> coe_to_string x
+    | Var x -> var_to_string x
+    | Add l -> add_to_string l
+    | Mult l -> mult_to_string l
+    | Div (n, d) -> div_to_string n d
+    | Pow (b, e) -> pow_to_string b e
+    | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+  in
+  if negative then "-" ^ str
+  else str

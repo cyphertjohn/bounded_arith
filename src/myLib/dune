@@ -6,7 +6,8 @@
 (modules polyLexer expLexer))
 
 (menhir
-(modules polyParse expParse))
+(modules polyParse expParse)
+(flags --explain --dump))
 
 (env
  (dev

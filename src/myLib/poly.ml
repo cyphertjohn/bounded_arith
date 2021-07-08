@@ -5,7 +5,6 @@ module MakeMon (C : Coefficient) = struct
 
   include C
 
-  let var_power_to_string (Exp(x, e)) = if e > 1 then x ^ "^" ^ (string_of_int e) else x
 
   let get_deg (Exp (_, e)) = e 
                   
@@ -18,10 +17,7 @@ module MakeMon (C : Coefficient) = struct
   let mult_var_mon (Exp (var, e)) (Prod l) = 
     if (List.exists (fun (Exp (s, _)) -> var = s) l) then
       Prod (List.map (fun (Exp (s, e2)) -> if (s = var) then Exp (s, e + e2) else Exp (s, e2)) l)
-    else sort_monic_mon (Prod ((Exp(var,e)) :: l))
-                  
-  let monic_mon_to_string m = String.concat "" (List.map var_power_to_string (match (sort_monic_mon m) with | Prod l -> l))            
-
+    else sort_monic_mon (Prod ((Exp(var,e)) :: l))      
 
   let rec lex_ord a b = 
     match (sort_monic_mon a, sort_monic_mon b) with
@@ -39,7 +35,6 @@ module MakeMon (C : Coefficient) = struct
   
   let sort_monomial (coef, mon) = (coef, sort_monic_mon mon)
   
-  let to_string (Coef c, Prod m) = if m = [] then C.to_string_c c else if C.is_one c then (monic_mon_to_string (Prod m)) else (C.to_string_c c) ^ (monic_mon_to_string (Prod m))
   
   let get_monic_mon (Coef _, mon) = mon
   
@@ -106,7 +101,6 @@ module Make (M : sig
               val sort_monomial : coef monomial -> coef monomial
               val get_monic_mon : 'a monomial -> monic_mon
               val total_deg : monic_mon -> int
-              val to_string : coef monomial -> string
               val divide_mon : coef monomial -> coef monomial -> (coef monomial) option
               val lcm : monic_mon -> monic_mon -> monic_mon
             end ) = struct
@@ -153,8 +147,28 @@ module Make (M : sig
   let mult (Sum p1) p2 = 
     sort_poly (List.fold_left (fun acc x -> add (mult_mon_poly x p2) acc) (Sum []) p1)
   
+
+  let var_power_to_string (Exp(x, e)) = if e > 1 then x ^ "^" ^ (string_of_int e) else x
+  let monic_mon_to_string m = String.concat "" (List.map var_power_to_string (match m with | Prod l -> l))
+
+  let mon_to_string mon =
+    let (Coef c, Prod m) = M.sort_monomial mon in
+    let is_neg, norm_c = 
+      if M.cmp c (M.from_string_c "0") < 0 then true, (M.mulc c (M.from_string_c "-1"))
+      else false, c
+    in
+    if m = [] then is_neg, M.to_string_c norm_c
+    else if M.is_one norm_c then is_neg, (monic_mon_to_string (Prod m))
+    else is_neg, (M.to_string_c norm_c) ^ (monic_mon_to_string (Prod m)) 
+
   let to_string (Sum p) = 
-    String.concat " + " (List.map M.to_string p)
+    let folder (acc, first) (is_neg, m_s) =
+      if first && is_neg then "-" ^ m_s, false
+      else if first then m_s, false
+      else if is_neg then acc ^ " - " ^ m_s, false
+      else acc ^ " + " ^ m_s, false
+    in
+    fst (List.fold_left folder ("", true) (List.map mon_to_string p))
 
   let is_lin (Sum p) = List.for_all (fun m -> M.total_deg (M.get_monic_mon m) <= 1) p
 
