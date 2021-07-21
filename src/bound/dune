@@ -1,5 +1,5 @@
 (library
- (name mylib)
+ (name bound)
  (libraries gmp))
 
 (ocamllex
