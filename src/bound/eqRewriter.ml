@@ -244,14 +244,14 @@ let rewrite terms vars_to_keep t =
     else S.add v false acc
   in
   let rec loop old_bind new_bind t_map tp ps =
-    print_endline "Curr Map";
-    print_endline (var_map_to_string t_map);
-    print_endline "";
-    print_endline ("Curr t : " ^ (P.to_string tp));
-    print_endline "";
-    print_endline ("Curr Polys");
-    print_endline (String.concat "\n" (List.map P.to_string ps));
-    print_endline "\n";
+    Log.log_line ~level:`debug "Curr Map";
+    Log.log_line ~level:`debug (var_map_to_string t_map);
+    Log.log_line ~level:`debug "";
+    Log.log_line ~level:`debug ("Curr t : " ^ (P.to_string tp));
+    Log.log_line ~level:`debug "";
+    Log.log_line ~level:`debug ("Curr Polys");
+    Log.log_line ~level:`debug (String.concat "\n" (List.map P.to_string ps));
+    Log.log_line ~level:`debug "\n";
     if (List.sort compare old_bind) = (List.sort compare new_bind) then List.hd (unpurify [tp] t_map)
     else
       let deg_map = calc_deg_map term_map in
