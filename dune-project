@@ -1,5 +1,5 @@
 (lang dune 2.8)
-(name boundedarith)
+(name bound)
 (using menhir 2.1)
 
 
@@ -10,7 +10,7 @@
 (maintainers "github.com/cyphertjohn")
 
 (package
- (name boundedarith)
+ (name bound)
  (synopsis "A library for generating symbolic bounds")
  (depends
    (mlgmpidl (>= 1.2.13))

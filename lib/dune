@@ -1,0 +1,14 @@
+(library
+ (name bound)
+ (public_name bound)
+ (libraries gmp))
+
+(ocamllex
+(modules polyLexer expLexer))
+
+(menhir
+(modules polyParse expParse))
+
+;(env
+; (dev
+;   (flags (:standard -warn-error -A))))
