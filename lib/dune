@@ -1,6 +1,7 @@
 (library
  (name bound)
  (public_name bound)
+ (private_modules polyLexer polyParse expLexer expParse)
  (libraries gmp))
 
 (ocamllex
