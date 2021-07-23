@@ -286,7 +286,7 @@ module Make (M : sig
       foo lis 0
     in
     let rec aux p mults r = 
-      if is_zero p then (mults, r)
+      if is_zero p then (mults, sort_poly r)
       else 
         let ltp = lt p in
         let ltdiv fi = M.divide_mon ltp (lt fi) in
