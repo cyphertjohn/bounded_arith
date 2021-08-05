@@ -16,7 +16,8 @@ module type Coefficient = sig
     val mulc : coef -> coef -> coef
     val divc : coef -> coef -> coef 
     val is_zero : coef -> bool
-    val is_one :coef -> bool
+    val is_one : coef -> bool
+    val sgn : coef -> int
     val from_string_c : string -> coef
     val to_string_c : coef -> string
     val cmp : coef -> coef -> int

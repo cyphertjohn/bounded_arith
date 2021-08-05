@@ -17,7 +17,8 @@ module type Coefficient = sig
     val mulc : coef -> coef -> coef
     val divc : coef -> coef -> coef 
     val is_zero : coef -> bool
-    val is_one :coef -> bool
+    val is_one : coef -> bool
+    val sgn : coef -> int
     val from_string_c : string -> coef
     val to_string_c : coef -> string
     val cmp : coef -> coef -> int
@@ -31,6 +32,7 @@ module Q : Coefficient = struct
     let divc = Mpqf.div
     let is_zero c = (Mpqf.cmp_int c 0) = 0
     let is_one c = (Mpqf.cmp_int c 1) = 0
+    let sgn = Mpqf.sgn
     let to_string_c = Mpqf.to_string
     let from_string_c = Mpqf.of_string
     let cmp = Mpqf.cmp
