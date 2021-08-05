@@ -227,6 +227,8 @@ let update_map g_basis term_map polys t_p =
   in
   aux pairs (polys, t_p, reduced_map)
 
+(** Compute an upper bound for t over the variables in vars_to_keep,
+    provided the equalities tx = 0 for all tx in terms. *)
 let rewrite terms vars_to_keep t = 
   P.set_ord (Mon.lex_ord);
   let foldr (old_pol, old_tmap) term =
