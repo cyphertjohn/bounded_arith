@@ -13,7 +13,7 @@ To initialize opam run:
 
 Then the ocaml packages (along with a help REPL interface utop) can be installed with
 
-`opam install mlgmpidl utop`.
+`opam install mlgmpidl utop menhir`.
 
 ## Building
 To build the library MyLib run:
@@ -29,6 +29,6 @@ This will open an ocaml REPL. To load the built library run:
 
 `#use_output "dune top"`
 
-To load the file src/poly.ml run
+To load the file bin/poly.ml run
 
-`#use "src/poly.ml"`.
+`#use "/bin/poly.ml"`.
