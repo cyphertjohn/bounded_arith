@@ -82,7 +82,7 @@ let term_vars map =
   in
   S.fold folder map []
 
-let calc_keep_vars term_map vars_to_keep =
+let calc_keep_vars term_map t vars_to_keep =
   let rec aux v term acc = 
     if S.mem v acc then acc
     else
@@ -102,7 +102,9 @@ let calc_keep_vars term_map vars_to_keep =
         let keep = List.for_all keep_variable vars in
         S.add v keep !ref_acc
   in
-  S.fold aux term_map S.empty
+  let res = S.fold aux term_map S.empty in
+  let tvars = get_vars t in
+  List.fold_left (fun acc tvar -> if S.mem tvar acc then acc else if List.mem tvar vars_to_keep then S.add tvar true acc else S.add tvar false acc) res tvars
 
 
 let calc_deg_map term_map =
@@ -258,7 +260,7 @@ let rewrite terms vars_to_keep t =
     else
       let deg_map = calc_deg_map term_map in
       let tvars = term_vars term_map in
-      let keep_map = List.fold_left keep_folder (calc_keep_vars term_map vars_to_keep) ((List.concat (List.map get_vars ps)) @ tvars) in
+      let keep_map = List.fold_left keep_folder (calc_keep_vars term_map tp vars_to_keep) ((List.concat (List.map get_vars ps)) @ tvars) in
       P.set_ord (effective_deg_ord deg_map keep_map);
       let g_basis = P.improved_buchberger ps in
       let (new_polys, new_t, new_map) = update_map g_basis t_map ps tp in
