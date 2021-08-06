@@ -91,7 +91,7 @@ let calc_keep_vars term_map vars_to_keep =
         let vars = get_vars p in
         let ref_acc = ref acc in
         let keep_variable v =
-          if S.mem v acc then S.find v !ref_acc
+          if S.mem v !ref_acc then S.find v !ref_acc
           else if not (S.mem v term_map) && (List.mem v vars_to_keep) then true
           else if not (S.mem v term_map) then false
           else
@@ -225,7 +225,7 @@ let update_map g_basis term_map polys t_p =
           else aux l (old_polys, old_tp, old_map)
       | _ -> aux l (old_polys, old_tp, old_map)
   in
-  aux pairs (polys, t_p, reduced_map)
+  aux pairs (polys, snd (P.division g_basis t_p), reduced_map)
 
 (** Compute an upper bound for t over the variables in vars_to_keep,
     provided the equalities tx = 0 for all tx in terms. *)
@@ -258,9 +258,9 @@ let rewrite terms vars_to_keep t =
     else
       let deg_map = calc_deg_map term_map in
       let tvars = term_vars term_map in
-      let keep_map = List.fold_left keep_folder (calc_keep_vars term_map vars_to_keep) ((List.concat (List.map get_vars polys)) @ tvars) in
+      let keep_map = List.fold_left keep_folder (calc_keep_vars term_map vars_to_keep) ((List.concat (List.map get_vars ps)) @ tvars) in
       P.set_ord (effective_deg_ord deg_map keep_map);
-      let g_basis = P.improved_buchberger polys in
+      let g_basis = P.improved_buchberger ps in
       let (new_polys, new_t, new_map) = update_map g_basis t_map ps tp in
       loop new_bind (fst (List.split (S.bindings new_map))) new_map new_t new_polys
   in
