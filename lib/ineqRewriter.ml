@@ -14,7 +14,7 @@ let rec expr_sign expr =
 		let sum_signs = List.map expr_sign sum_list in
 		if 		(List.fold_left (&&) true (List.map (fun s -> s >= 0) sum_signs)) then 1 (* +a_1 + a_2 + ...*)
 		else if (List.fold_left (&&) true (List.map (fun s -> s <= 0) sum_signs)) then -1 (* -a_1 - a_2 - ...*)
-		else failwith "inconclusive sign due to mixed sign addition"
+		else failwith ("inconclusive sign due to mixed sign addition, " ^ (Expr.to_string expr))
 	| Div (num, denom) -> (expr_sign num) * (expr_sign denom)
 	| Floor x -> expr_sign x
 
