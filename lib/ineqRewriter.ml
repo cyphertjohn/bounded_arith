@@ -23,8 +23,9 @@ let rewrite (t: Sigs.Q.coef Sigs.Expr.expr): Sigs.Q.coef Sigs.Expr.expr =
 		match expr with
   		| Coe _ | Var _ -> expr
   		| Pow (base, exponent) ->
-  			assert (exponent >= 0);
-    		Pow (elim_floor base polarity, exponent)
+  			let new_polarity = polarity <> (exponent < 0) in
+  			let rewritten_base = elim_floor base new_polarity in
+    		Pow (rewritten_base, exponent)
   		| Mult prod_list -> 
   			let total_sign = expr_sign expr in
   			let new_polarity a = 
