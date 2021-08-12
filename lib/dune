@@ -1,5 +1,6 @@
 (library
  (name bound)
+ (synopsis "A library for generating symbolic bounds")
  (public_name bound)
  (private_modules polyLexer polyParse expLexer expParse)
  (libraries gmp))

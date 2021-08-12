@@ -1,6 +1,7 @@
 open Sigs.Expr
 open Sigs.Polynomial
-open Poly
+
+module P = Poly.Make(Sigs.Q)
 
 module S = Map.Make(String)
 
@@ -135,7 +136,7 @@ let effective_deg_ord deg_map keep_map (Prod a) (Prod b) =
   in
   let (a_deg, b_deg) = (List.fold_left folder (0, 0) a, List.fold_left folder (0, 0) b) in
   if (fst a_deg = fst b_deg) then 
-    if (snd a_deg = snd b_deg) then Mon.lex_ord (Prod a) (Prod b)
+    if (snd a_deg = snd b_deg) then Poly.lex_ord (Prod a) (Prod b)
     else compare (snd a_deg) (snd b_deg)
   else compare (fst a_deg) (fst b_deg)
 
@@ -178,7 +179,7 @@ let unpurify polys term_map =
     | v :: rest -> if List.mem v acc then remove_dupes rest acc
                    else remove_dupes rest (v :: acc)
   in
-  let init_subst = List.fold_left (fun acc v -> function variable -> if v = variable then (Var v, true) else acc variable) (function _ -> (Coe (Mon.from_string_c "0"), false)) (remove_dupes pure_vars []) in
+  let init_subst = List.fold_left (fun acc v -> function variable -> if v = variable then (Var v, true) else acc variable) (function _ -> (Coe (Sigs.Q.from_string_c "0"), false)) (remove_dupes pure_vars []) in
   let substituter = S.fold make_subsituter term_map init_subst in
   let sub_poly (Sum p) = 
     let sub_var_pow (Exp (v, e)) =
@@ -213,7 +214,7 @@ let update_map g_basis term_map polys t_p =
       | Some (Recip t_i), Some (Recip t_j) | Some (Floo t_i), Some (Floo t_j) -> 
         let remove_var_sub rem sub polys t_prime map =
           let rem_map = S.remove rem map in
-          let sub_poly = Sum [Coef (Mon.from_string_c "1"), Prod[Exp(sub, 1)]] in
+          let sub_poly = Sum [Coef (Sigs.Q.from_string_c "1"), Prod[Exp(sub, 1)]] in
           let new_map = S.map (sub_fun_app_var rem sub_poly) rem_map in
           let new_polys = List.map (P.substitute (rem, sub_poly)) polys in
           let new_t_prime = P.substitute (rem, sub_poly) t_prime in
@@ -232,7 +233,7 @@ let update_map g_basis term_map polys t_p =
 (** Compute an upper bound for t over the variables in vars_to_keep,
     provided the equalities tx = 0 for all tx in terms. *)
 let rewrite terms vars_to_keep t = 
-  P.set_ord (Mon.lex_ord);
+  P.set_ord (Poly.lex_ord);
   let foldr (old_pol, old_tmap) term =
     let (pols, tmap) = purify term in
     (old_pol @ pols, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap)

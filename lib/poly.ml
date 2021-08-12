@@ -1,40 +1,34 @@
 open Sigs
 open Sigs.Polynomial
 
+
+let get_deg (Exp (_, e)) = e 
+                  
+let cmp_var (Exp(x, e1)) (Exp(y, e2)) = if compare x y = 0 then compare e1 e2 else -1 * (compare x y)
+                 
+let sort_monic_mon (Prod l) = 
+  let remove_one = List.filter (fun (Exp(_, e)) -> e <> 0) l in
+  Prod (List.rev (List.sort cmp_var remove_one))
+
+let rec lex_ord a b = 
+  match (sort_monic_mon a, sort_monic_mon b) with
+  | (Prod [], Prod []) -> 0
+  | (Prod [], _) -> -1
+  | (_, Prod []) -> 1
+  | (Prod (x :: xs), Prod (y :: ys)) -> if cmp_var x y = 0 then lex_ord (Prod xs) (Prod ys)
+                          else cmp_var x y
+  
+let total_deg (Prod m) = List.fold_left (+) 0 (List.map get_deg m)
+  
+let grlex_ord a b =
+  if compare (total_deg a) (total_deg b) = 0 then lex_ord a b
+  else compare (total_deg a) (total_deg b)
+
 module MakeMon (C : Coefficient) = struct
 
   include C
-
-
-  let get_deg (Exp (_, e)) = e 
-                  
-  let cmp_var (Exp(x, e1)) (Exp(y, e2)) = if compare x y = 0 then compare e1 e2 else -1 * (compare x y)
-                  
-  let sort_monic_mon (Prod l) = 
-    let remove_one = List.filter (fun (Exp(_, e)) -> e <> 0) l in
-    Prod (List.rev (List.sort cmp_var remove_one))
-                  
-  let mult_var_mon (Exp (var, e)) (Prod l) = 
-    if (List.exists (fun (Exp (s, _)) -> var = s) l) then
-      Prod (List.map (fun (Exp (s, e2)) -> if (s = var) then Exp (s, e + e2) else Exp (s, e2)) l)
-    else sort_monic_mon (Prod ((Exp(var,e)) :: l))      
-
-  let rec lex_ord a b = 
-    match (sort_monic_mon a, sort_monic_mon b) with
-    | (Prod [], Prod []) -> 0
-    | (Prod [], _) -> -1
-    | (_, Prod []) -> 1
-    | (Prod (x :: xs), Prod (y :: ys)) -> if cmp_var x y = 0 then lex_ord (Prod xs) (Prod ys)
-                            else cmp_var x y
-  
-  let total_deg (Prod m) = List.fold_left (+) 0 (List.map get_deg m)
-  
-  let grlex_ord a b =
-    if compare (total_deg a) (total_deg b) = 0 then lex_ord a b
-    else compare (total_deg a) (total_deg b)
   
   let sort_monomial (coef, mon) = (coef, sort_monic_mon mon)
-  
   
   let get_monic_mon (Coef _, mon) = mon
   
@@ -93,14 +87,13 @@ module MakeMon (C : Coefficient) = struct
 end
 
 
-module Make (M : sig
+module MakeP (M : sig
               include Coefficient
               val ord : (monic_mon -> monic_mon -> int) ref
               val mon_ord : coef monomial -> coef monomial -> int
               val mult_mon : coef monomial -> coef monomial -> coef monomial
               val sort_monomial : coef monomial -> coef monomial
               val get_monic_mon : 'a monomial -> monic_mon
-              val total_deg : monic_mon -> int
               val divide_mon : coef monomial -> coef monomial -> (coef monomial) option
               val lcm : monic_mon -> monic_mon -> monic_mon
             end ) = struct
@@ -170,25 +163,6 @@ module Make (M : sig
     in
     fst (List.fold_left folder ("", true) (List.map mon_to_string p))
 
-  let is_lin (Sum p) = List.for_all (fun m -> M.total_deg (M.get_monic_mon m) <= 1) p
-
-  let mon_contain_only_dummy (Coef _, Prod m) =
-    List.for_all
-      (fun (Exp (v, _)) ->
-        if String.length v < 5 then false
-        else if (String.sub v 0 5) = "dummy" then true
-        else false
-      ) m
-
-
-  let is_lin_in_non_dummies (Sum p) = 
-    List.for_all
-      (fun (Coef c, Prod m) -> 
-        if M.total_deg (Prod m) <= 1 then true
-        else
-          mon_contain_only_dummy (Coef c, Prod m)
-        ) p
-
   let exp_poly p e = 
     let rec aux curr_e acc = 
       if curr_e <= 0 then acc
@@ -238,10 +212,6 @@ module Make (M : sig
   let string_to_coef (Sum l) = 
     let mon_string_to_coef (Coef c, m) = (Coef (M.from_string_c c), m) in
     Sum (List.map mon_string_to_coef l)
-
-  let from_string_dum dum = 
-    let vp = Exp (dum, 1) in
-    Sum [(Coef (M.from_string_c "1"), Prod [vp])]
 
   let from_string s = 
     sort_poly (string_to_coef (PolyParse.main PolyLexer.token (Lexing.from_string s)))
@@ -311,19 +281,6 @@ module Make (M : sig
       s
     | _ -> failwith "shouldn't happen"
 
-  let buchberger (fs : M.coef polynomial list) = 
-    let g = ref fs in
-    let g_p = ref [] in
-    while (!g <> !g_p) do
-      g_p := !g;
-      let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
-      let pairs = get_pairs !g_p in
-      List.iter (fun (x, y) ->
-        let s = snd (division !g_p (s_poly x y)) in
-        if not (is_zero s) then g := s :: !g
-      ) pairs
-    done;
-    !g
 
   let minimize fs = 
     let monic_grobner = List.map 
@@ -385,12 +342,10 @@ module Make (M : sig
 
 end
 
+module Make ( C : Coefficient) = MakeP(MakeMon(C))
 
-module Mon = MakeMon (Sigs.Q)
 
-module P = Make (Mon)
-
-module Eliminate = struct
+(*module Eliminate = struct
 
   let order = ref (let default = ref [] in let () = String.iter (fun c -> default := (Char.escaped c):: !default) "zyxwvutsrqponmlkjihgfedcba" in !default)
 
@@ -461,4 +416,4 @@ module Eliminate = struct
     let g = P.improved_buchberger polys in
     List.filter P.is_lin g
 
-end
+end*)

@@ -1,4 +1,4 @@
-(**Module used for logging*)
+(** Module used for logging. *)
 
 (**Set the output of the logger. Default is stdout.*)
 val set_chan : out_channel -> unit
