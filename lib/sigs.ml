@@ -10,7 +10,6 @@ module Polynomial = struct
     type 'a polynomial = Sum of ('a monomial) list
 end 
 
-
 module type Coefficient = sig 
     type coef 
     val addc : coef -> coef -> coef 
@@ -25,18 +24,19 @@ module type Coefficient = sig
     val floor : coef -> coef
 end
 
+
 module Q : Coefficient = struct 
-    type coef = Mpqf.t
-    let addc = Mpqf.add 
-    let mulc = Mpqf.mul
-    let divc = Mpqf.div
-    let is_zero c = (Mpqf.cmp_int c 0) = 0
-    let is_one c = (Mpqf.cmp_int c 1) = 0
-    let sgn = Mpqf.sgn
-    let to_string_c = Mpqf.to_string
-    let from_string_c = Mpqf.of_string
-    let cmp = Mpqf.cmp
-    let floor x = Mpqf.of_mpz (Mpqf.get_num x)
+    type coef = Q.t
+    let addc = Q.add 
+    let mulc = Q.mul
+    let divc = Q.div
+    let is_zero c = (Q.compare c (Q.of_string "0")) = 0
+    let is_one c = (Q.compare c (Q.of_string "1")) = 0
+    let sgn = Q.sign
+    let to_string_c = Q.to_string
+    let from_string_c = Q.of_string
+    let cmp = Q.compare
+    let floor x = Q.of_bigint (Q.num x)
 end
 
 module Expr = struct

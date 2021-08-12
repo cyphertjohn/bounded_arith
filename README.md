@@ -13,7 +13,7 @@ To initialize opam run:
 
 Then the ocaml packages (along with a help REPL interface utop) can be installed with
 
-`opam install mlgmpidl utop menhir`.
+`opam install zarith utop menhir`.
 
 ## Building
 To build the library MyLib run:

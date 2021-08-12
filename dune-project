@@ -13,6 +13,6 @@
  (name bound)
  (synopsis "A library for generating symbolic bounds")
  (depends
-   (mlgmpidl (>= 1.2.13))
+   (zarith (>= 1.12))
  )
 )
