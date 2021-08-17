@@ -12,16 +12,17 @@ let vars_to_keep = ["x"; "r0"]
 
 let vname i = String.concat "" ["r"; (string_of_int i); "m"]
 
-let iter_str r = Str.global_replace (regexp "r0") r "floor(((r0) + floor(x / (r0))) / (2))"
+let iter_str r = global_replace (regexp "r0") r "floor(((r0) + floor(x / (r0))) / (2))"
 
 let n = 2
 let unrolled_str = ref (vname n)
-for i = 0 to n-1 do
+
+let _ = for i = 0 to n-1 do
 	let cur = n-i in
     unrolled_str := global_replace (regexp (vname cur)) (iter_str (vname (cur - 1))) !unrolled_str
 done
 
-let tupper = from_string (Str.global_replace (regexp "res") !unrolled_str "x^2 - (res)^2")
+let tupper = from_string (global_replace (regexp "res") !unrolled_str "x^2 - (res)^2")
 
 (* *********************** *)
 

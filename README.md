@@ -23,12 +23,16 @@ To build the library MyLib run:
 ## Usage
 For now I've been using utop to interact with the library. To do this run:
 
-`utop`
+`dune utop lib`
 
-This will open an ocaml REPL. To load the built library run:
+which launches utop with the library defined in the lib directory.
 
-`#use_output "dune top"`
+To launch utop with additional libraries, for example str, run
 
-To load the file bin/poly.ml run
+`dune utop lib -- -require str`
 
-`#use "/bin/poly.ml"`.
+Then inside utop files can be loaded with
+
+`#use "examples/elastic.ml"`
+
+for example
