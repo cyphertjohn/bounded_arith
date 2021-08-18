@@ -2,17 +2,17 @@
 (name bound)
 (using menhir 2.1)
 
-
-(generate_opam_files true)
-
 (license MIT)
 (authors "John Cyphert")
 (maintainers "github.com/cyphertjohn")
+(homepage "github.com/cyphertjohn/bounded_arith")
+(bug_reports "github.com/cyphertjohn/bounded_arith")
 
 (package
  (name bound)
  (synopsis "A library for generating symbolic bounds")
  (depends
-   (zarith (>= 1.12))
+   (zarith :build)
+   (menhir :build)
  )
 )

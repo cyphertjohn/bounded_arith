@@ -11,9 +11,13 @@ To initialize opam run:
 
 `opam init`
 
-Then the ocaml packages (along with a help REPL interface utop) can be installed with
+Then the ocaml packages can be installed by running the following in the project directory with:
 
-`opam install zarith utop menhir`.
+`opam install . --deps-only`
+
+Also, utop is helpful. To install run
+
+`opam install utop`
 
 ## Building
 To build the library MyLib run:
