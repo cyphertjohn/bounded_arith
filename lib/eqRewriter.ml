@@ -7,6 +7,39 @@ module S = Map.Make(String)
 
 type 'a fun_app = Recip of ('a polynomial) | Floo of ('a polynomial)
 
+
+let log_keep_map keep_map =
+  let mapping_to_string v keep acc = (v ^ " -> " ^ (string_of_bool keep)) :: acc in
+  let map_string = String.concat "\n" (S.fold mapping_to_string keep_map []) in
+  Log.log_line ~level:`trace "Keep Map";
+  Log.log_line ~level:`trace map_string;
+  Log.log_line ~level:`trace ""
+
+let log_term_map term_map = 
+  let var_map_to_string var_map = 
+    let mapping_to_string v fun_map acc = 
+      let map_str =
+        match fun_map with
+        | Recip poly -> v ^ " -> " ^ "(" ^ (P.to_string poly) ^ ")^-1"
+        | Floo poly -> v ^ " -> " ^ "floor(" ^ (P.to_string poly) ^ ")"
+      in
+      map_str :: acc
+    in
+    String.concat "\n" (S.fold mapping_to_string var_map [])
+  in
+  Log.log_line ~level:`debug "Curr Map";
+  Log.log_line ~level:`debug (var_map_to_string term_map);
+  Log.log_line ~level:`debug ""
+
+let log_t tp = 
+  Log.log_line ~level:`debug ("Curr t : " ^ (P.to_string tp));
+  Log.log_line ~level:`debug ""
+
+let log_polys ps = 
+  Log.log_line ~level:`debug ("Curr Polys");
+  Log.log_line ~level:`debug (String.concat "\n" (List.map P.to_string ps));
+  Log.log_line ~level:`debug ""
+
 let sub_fun_app_var var_to_replace poly_to_replace_with term = 
   match term with
   | Recip p -> Recip (P.substitute (var_to_replace , poly_to_replace_with) p)
@@ -58,32 +91,20 @@ let purify ex =
   let res_poly, (new_const, term_map) = aux ex in
   res_poly :: new_const, term_map
 
-let var_map_to_string var_map = 
-  let mapping_to_string v fun_map acc = 
-    let map_str =
-      match fun_map with
-      | Recip poly -> v ^ " -> " ^ "(" ^ (P.to_string poly) ^ ")^-1"
-      | Floo poly -> v ^ " -> " ^ "floor(" ^ (P.to_string poly) ^ ")"
-    in
-    map_str :: acc
-  in
-  String.concat "\n" (S.fold mapping_to_string var_map [])
-
-
 let get_vars (Sum poly) = 
   let get_vars_m (_, Prod mon) = 
     List.map (fun (Exp (v, _)) -> v) mon
   in
   List.concat (List.map get_vars_m poly)
 
-let term_vars map = 
+(*let term_vars map = 
   let folder v term vars =
     match term with
     | Recip p | Floo p -> v :: (get_vars p) @ vars
   in
-  S.fold folder map []
+  S.fold folder map []*)
 
-let calc_keep_vars term_map t vars_to_keep =
+let calc_keep_vars term_map vars_to_keep =
   let rec aux v term acc = 
     if S.mem v acc then acc
     else
@@ -91,21 +112,23 @@ let calc_keep_vars term_map t vars_to_keep =
       | Recip p | Floo p ->
         let vars = get_vars p in
         let ref_acc = ref acc in
-        let keep_variable v =
-          if S.mem v !ref_acc then S.find v !ref_acc
-          else if not (S.mem v term_map) && (List.mem v vars_to_keep) then true
-          else if not (S.mem v term_map) then false
-          else
-            let new_acc = aux v (S.find v term_map) !ref_acc in
-            ref_acc := new_acc;
-            S.find v !ref_acc
+        let keep_variable v_sub =
+          if S.mem v_sub !ref_acc then S.find v_sub !ref_acc
+          else 
+            let () = (if not (S.mem v_sub term_map) && (List.mem v_sub vars_to_keep) then 
+              ref_acc := S.add v_sub true !ref_acc
+            else if not (S.mem v_sub term_map) then 
+              ref_acc := S.add v_sub false !ref_acc
+            else
+              let new_acc = aux v_sub (S.find v_sub term_map) !ref_acc in
+              ref_acc := new_acc) in
+            S.find v_sub !ref_acc
         in
         let keep = List.for_all keep_variable vars in
         S.add v keep !ref_acc
   in
   let res = S.fold aux term_map S.empty in
-  let tvars = get_vars t in
-  List.fold_left (fun acc tvar -> if S.mem tvar acc then acc else if List.mem tvar vars_to_keep then S.add tvar true acc else S.add tvar false acc) res tvars
+  res
 
 
 let calc_deg_map term_map =
@@ -230,6 +253,25 @@ let update_map g_basis term_map polys t_p =
   in
   aux pairs (polys, snd (P.division g_basis t_p), reduced_map)
 
+let equal_t_map a b = 
+  let a_keys = fst (List.split (S.bindings a)) in
+  let b_keys = fst (List.split (S.bindings b)) in
+  if (List.sort compare a_keys) <> (List.sort compare b_keys) then
+    false
+  else
+    let folder prev_eq v =
+      if not prev_eq then prev_eq
+      else 
+        let a_term = S.find v a in
+        let b_term = S.find v b in
+        match (a_term, b_term) with
+        | Recip a_p, Recip b_p | Floo a_p, Floo b_p ->
+          if P.compare a_p b_p = 0 then true
+          else false
+        | _ -> false
+    in
+    List.fold_left folder true a_keys
+  
 (** Compute an upper bound for t over the variables in vars_to_keep,
     provided the equalities tx = 0 for all tx in terms. *)
 let rewrite terms vars_to_keep t = 
@@ -248,25 +290,25 @@ let rewrite terms vars_to_keep t =
     else if List.mem v vars_to_keep then S.add v true acc
     else S.add v false acc
   in
-  let rec loop old_bind new_bind t_map tp ps =
-    Log.log_line ~level:`debug "Curr Map";
-    Log.log_line ~level:`debug (var_map_to_string t_map);
-    Log.log_line ~level:`debug "";
-    Log.log_line ~level:`debug ("Curr t : " ^ (P.to_string tp));
-    Log.log_line ~level:`debug "";
-    Log.log_line ~level:`debug ("Curr Polys");
-    Log.log_line ~level:`debug (String.concat "\n" (List.map P.to_string ps));
-    Log.log_line ~level:`debug "\n";
-    if (List.sort compare old_bind) = (List.sort compare new_bind) then List.hd (unpurify [tp] t_map)
-    else
-      let deg_map = calc_deg_map term_map in
-      let tvars = term_vars term_map in
-      let keep_map = List.fold_left keep_folder (calc_keep_vars term_map tp vars_to_keep) ((List.concat (List.map get_vars ps)) @ tvars) in
-      P.set_ord (effective_deg_ord deg_map keep_map);
-      let g_basis = P.improved_buchberger ps in
-      let (new_polys, new_t, new_map) = update_map g_basis t_map ps tp in
-      loop new_bind (fst (List.split (S.bindings new_map))) new_map new_t new_polys
+  let iteration t_map tp ps =
+    log_term_map t_map;
+    log_t tp;
+    log_polys ps;
+    let deg_map = calc_deg_map t_map in
+    (*let tvars = term_vars term_map in*)
+    let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map get_vars (tp::ps))) in
+    log_keep_map keep_map;
+    P.set_ord (effective_deg_ord deg_map keep_map);
+    let g_basis = P.improved_buchberger ps in
+    update_map g_basis t_map ps tp 
   in
-  loop [] (fst (List.split (S.bindings term_map))) term_map t_poly polys
+  let rec loop old_map t_map tp ps =
+    if equal_t_map old_map t_map then 
+      List.hd (unpurify [tp] t_map)
+    else
+      let (new_polys, new_t, new_map) = iteration t_map tp ps in
+      loop t_map new_map new_t new_polys
+  in
+  loop S.empty term_map t_poly polys
 
   
