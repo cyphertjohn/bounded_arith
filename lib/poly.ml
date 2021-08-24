@@ -52,6 +52,8 @@ module MakeMon (C : Coefficient) = struct
       zip l1 l2 []
   
   let divide_mon a b = 
+    let b_coef = get_coef b in
+    if C.is_zero b_coef then failwith "Divide by 0";
     let new_coef = C.divc (get_coef a) (get_coef b) in
     let (Prod vars) = get_monic_mon b in
     if vars = [] then Some (Coef new_coef, get_monic_mon a)
@@ -99,14 +101,50 @@ module MakeP (M : sig
             end ) = struct
 
   let set_ord order = M.ord := order
- 
 
-  let sort_poly (Sum poly) = 
+  type normalized_poly = N of (M.coef polynomial)
+
+
+
+  (*let sort_poly (Sum poly) = 
     let remove_zero = List.filter (fun (Coef c, _) -> not (M.is_zero c)) (List.map M.sort_monomial poly) in
     if remove_zero = [] then (Sum [(Coef (M.from_string_c "0"), Prod [])])
-    else Sum (List.rev (List.sort M.mon_ord remove_zero))
+    else Sum (List.rev (List.sort M.mon_ord remove_zero))*)
 
-  let lt poly = let (Sum sorted) = sort_poly poly in List.hd sorted 
+  let zero = Sum [(Coef (M.from_string_c "0"), Prod [])]
+
+  let is_zero_n (N p) = 
+    match p with
+     | (Sum [(Coef c, Prod [])]) when M.is_zero c -> true
+     |_ -> false
+
+  
+
+  let collect_terms_normal (N (Sum sorted)) = 
+    if List.length sorted = 0 then N (Sum [(Coef (M.from_string_c "0"), Prod [])])
+    else
+      let folder (acc, (prev_m : M.coef monomial)) (curr_m : M.coef monomial) =
+        match (prev_m, curr_m) with
+        | (Coef c1, m1), (Coef c2, m2) when m1 = m2 -> 
+          (acc, (Coef (M.addc c1 c2), m1))
+        | _ ->
+          (prev_m :: acc, curr_m)
+      in
+      let (monomials, last) = List.fold_left folder ([], (Coef (M.from_string_c "0"), Prod [])) sorted in
+      let res_with_0 = List.rev (last :: monomials) in
+      let without_0 = List.filter (fun (Coef c, _) -> not (M.is_zero c)) res_with_0 in
+      if List.length without_0 = 0 then N (zero)
+      else N (Sum (without_0))
+
+  let normalize (Sum poly) = 
+    collect_terms_normal (N (Sum (List.rev (List.sort M.mon_ord (List.map M.sort_monomial poly)))))
+
+  let unnormalize (N p) = p
+    
+  let is_zero p = 
+    is_zero_n (normalize p)
+
+  let lt (N (Sum poly)) = List.hd poly
 
   let lm poly = M.get_monic_mon (lt poly)
 
@@ -118,13 +156,12 @@ module MakeP (M : sig
       Sum (List.map (fun (Coef c2, m2) -> if !ord m m2 = 0 then (Coef (c1 +. c2), m) else (Coef c2, m2)) a)
     else Sum ((Coef c1, m) :: a) *)
 
-  let add p1 p2 = 
-    let (Sum sort1, Sum sort2) = (sort_poly p1, sort_poly p2) in
+  let add_n (N (Sum p1)) (N (Sum p2)) = 
     let rec zip a b acc =
       match (a, b) with
-      | ([], []) -> Sum (List.rev acc)
-      | (_, []) -> Sum ((List.rev acc) @ a)
-      | ([], _) -> Sum ((List.rev acc) @ b)
+      | ([], []) -> N (Sum (List.rev acc))
+      | (_, []) -> N( Sum ((List.rev acc) @ a))
+      | ([], _) -> N (Sum ((List.rev acc) @ b))
       | ((Coef c1, m1) :: xs, (Coef c2, m2) :: ys) when m1 = m2 ->
         if M.is_zero (M.addc c1 c2) then zip xs ys acc
         else zip xs ys ((Coef (M.addc c1 c2), m1) :: acc)
@@ -133,16 +170,37 @@ module MakeP (M : sig
       | (_, (Coef c2, m2) :: ys) ->
         zip a ys ((Coef c2, m2) :: acc)
     in
-    zip sort1 sort2 []
-
-  let mult_mon_poly mon (Sum p2) = Sum (List.map (fun x -> M.mult_mon mon x) p2)
-
-  let mult (Sum p1) p2 = 
-    sort_poly (List.fold_left (fun acc x -> add (mult_mon_poly x p2) acc) (Sum []) p1)
+    let (N (Sum temp_res)) = zip p1 p2 [] in
+    if List.length temp_res = 0 then N (zero)
+    else (N (Sum temp_res))
   
 
+  let mult_mon_poly mon (N (Sum p2)) = N (Sum (List.map (M.mult_mon mon) p2))
+
+  (*let mult_n (N (Sum p1)) (N (Sum p2)) = 
+    let folder acc p2_mon = 
+      add_n acc (N (Sum (List.map (fun x -> M.mult_mon p2_mon x) p1)))
+    in
+    List.fold_left folder (N (Sum[Coef (M.from_string_c "0"), Prod[]])) p2*)
+
+  let minus_1 = Sum [(Coef (M.from_string_c ("-1")), Prod [])]
+
+  let subtract_n p1_n p2_n = 
+    let neg_p2_n = mult_mon_poly (Coef (M.from_string_c ("-1")), Prod []) p2_n in
+    add_n p1_n neg_p2_n
+
+  let add (Sum p1) (Sum p2) = 
+    Sum (p1 @ p2)
+
+  let mult (Sum p1) (Sum p2) = 
+    let folder acc p2_mon = 
+      acc @ ((List.map (fun x -> M.mult_mon p2_mon x) p1))
+    in
+    Sum (List.fold_left folder [] p2)
+
+
   let var_power_to_string (Exp(x, e)) = if e > 1 then x ^ "^" ^ (string_of_int e) else x
-  let monic_mon_to_string m = String.concat "" (List.map var_power_to_string (match m with | Prod l -> l))
+  let monic_mon_to_string m = String.concat "" (List.map var_power_to_string (let Prod l = m in l))
 
   let mon_to_string mon =
     let (Coef c, Prod m) = M.sort_monomial mon in
@@ -154,7 +212,13 @@ module MakeP (M : sig
     else if M.is_one norm_c then is_neg, (monic_mon_to_string (Prod m))
     else is_neg, (M.to_string_c norm_c) ^ (monic_mon_to_string (Prod m)) 
 
-  let to_string (Sum p) = 
+  let monomial_to_string mon = 
+    let (is_neg, mons) = mon_to_string mon in
+    if is_neg then "-" ^ mons
+    else mons
+  
+  let to_string unnormal = 
+    let (N (Sum p)) = normalize unnormal in
     let folder (acc, first) (is_neg, m_s) =
       if first && is_neg then "-" ^ m_s, false
       else if first then m_s, false
@@ -163,7 +227,7 @@ module MakeP (M : sig
     in
     fst (List.fold_left folder ("", true) (List.map mon_to_string p))
 
-  let exp_poly p e = 
+  let exp_poly p e = (*TODO: optimize *)
     let rec aux curr_e acc = 
       if curr_e <= 0 then acc
       else aux (curr_e - 1) (mult p acc)
@@ -194,12 +258,7 @@ module MakeP (M : sig
     List.fold_left (fun acc p -> add acc p) (List.hd sub_list) (List.tl sub_list)
     
 
-  let is_zero p = 
-    match sort_poly p with
-     | (Sum [(Coef c, Prod [])]) when M.is_zero c -> true
-     |_ -> false
-
-  let compare p1 p2 = 
+  let compare_n (N p1) (N p2) = 
     let rec aux (Sum a) (Sum b) = 
       match (a, b) with 
       | ([], []) -> 0
@@ -207,16 +266,19 @@ module MakeP (M : sig
       | (_, []) -> 1
       | (x :: xs, y :: ys) -> if M.mon_ord x y = 0 then aux (Sum xs) (Sum ys) else M.mon_ord x y
     in
-    aux (sort_poly p1) (sort_poly p2)
+    aux p1 p2
+
+  let compare p1 p2 = 
+    compare_n (normalize p1) (normalize p2)
 
   let string_to_coef (Sum l) = 
     let mon_string_to_coef (Coef c, m) = (Coef (M.from_string_c c), m) in
     Sum (List.map mon_string_to_coef l)
 
   let from_string s = 
-    sort_poly (string_to_coef (PolyParse.main PolyLexer.token (Lexing.from_string s)))
+    string_to_coef (PolyParse.main PolyLexer.token (Lexing.from_string s))
 
-  let minus_1 = Sum [(Coef (M.from_string_c ("-1")), Prod [])]
+  
 
 (*  let division divisors f =
     let r = ref (sort_poly (Sum [])) in
@@ -243,7 +305,7 @@ module MakeP (M : sig
     done;
     (!mults, !r) *)
   
-  let division divisors f =
+  let division_n divisors f =
     let find_map func lis = 
       let rec foo l i =
         match l with
@@ -256,29 +318,41 @@ module MakeP (M : sig
       foo lis 0
     in
     let rec aux p mults r = 
-      if is_zero p then (mults, sort_poly r)
+      if is_zero_n p then (mults, r)
       else 
         let ltp = lt p in
         let ltdiv fi = M.divide_mon ltp (lt fi) in
         match find_map ltdiv divisors with
         | None ->
-          aux (add p (mult (Sum [ltp]) minus_1)) mults (add r (Sum [ltp]))
+          Log.log_line ~level:`trace "Division iteration. No divisor";
+          Log.log_line ~level:`trace ("p := " ^ (to_string (unnormalize p)));
+          let (N (Sum (plist))) = p in
+          let p_rest = List.tl plist in
+          let new_p = if List.length p_rest = 0 then (N zero) else N (Sum p_rest) in
+          let new_r = add_n r (N (Sum [ltp])) in
+          if List.length p_rest = 0 then
+            aux new_p mults new_r
+          else
+            aux new_p mults new_r
         | Some (new_mon, i) ->
-          aux (add p (mult minus_1 (mult (Sum [new_mon]) (List.nth divisors i)))) (List.mapi (fun j x -> if j = i then add x (Sum [new_mon]) else x) mults) r
+          Log.log_line ~level:`trace "Division iteration. Found divisor";
+          let new_p = subtract_n p (mult_mon_poly new_mon (List.nth divisors i)) in
+          Log.log_line ~level:`trace ((to_string (unnormalize new_p)) ^ ":= ("^ (to_string (unnormalize p)) ^ ") - " ^ "(" ^ (monomial_to_string new_mon) ^ ") * (" ^ (to_string (unnormalize (List.nth divisors i))) ^ ")");
+          aux new_p (List.mapi (fun j x -> if j = i then add_n x (N (Sum [new_mon])) else x) mults) r
     in
-    aux f (List.map (fun _ -> (Sum [(Coef (M.from_string_c "0"), Prod [])])) divisors) ((Sum [(Coef (M.from_string_c "0"), Prod [])]))
+    aux f (List.map (fun _ -> (N (Sum [(Coef (M.from_string_c "0"), Prod [])]))) divisors) (N (Sum [(Coef (M.from_string_c "0"), Prod [])]))
+
+  let division divisors f =
+    let (mults, r) = division_n (List.map normalize divisors) (normalize f) in
+    (List.map unnormalize mults, unnormalize r)
 
   let s_poly f g =
     let lcmlm = M.lcm (lm f) (lm g) in
     let f_m = M.divide_mon (Coef (M.from_string_c "1"), lcmlm) (lt f) in
     let g_m = M.divide_mon (Coef (M.from_string_c "1"), lcmlm) (lt g) in
     match (f_m, g_m) with
-    | (Some f_t, Some (Coef c, g_t)) ->
-      let s = add (mult (Sum [f_t]) f) (mult (Sum [(Coef (M.mulc c (M.from_string_c "-1")), g_t)]) g) in
-      (*print_endline ("f: " ^ (to_string f));
-      print_endline ("g: " ^ (to_string g));
-      print_endline ("s: " ^ (to_string s));*)
-      s
+    | (Some f_t, Some g_t) ->
+      subtract_n (mult_mon_poly f_t f) (mult_mon_poly g_t g)
     | _ -> failwith "shouldn't happen"
 
 
@@ -286,7 +360,7 @@ module MakeP (M : sig
     let monic_grobner = List.map 
       (fun poly -> 
         let lc = lc poly in
-        mult (Sum [(Coef (M.divc (M.from_string_c "1") lc), Prod [])]) poly
+        mult_mon_poly (Coef (M.divc (M.from_string_c "1") lc), Prod []) poly
       ) fs in
     let is_need poly l = 
       let others = List.filter (fun p -> p <> poly) l in
@@ -302,6 +376,7 @@ module MakeP (M : sig
 
   let improved_buchberger (fs : M.coef polynomial list) = 
     let rec aux worklist g fss=
+      Log.log_line ~level:`trace "Beginning Grobner iteration";
       let t = (List.length fss) - 1 in
       let criterion i j lcmu =
         let rec foo k =
@@ -328,16 +403,18 @@ module MakeP (M : sig
         if lcmlt = prod then aux rest g fss (* criterion *)
         else if criterion i j (Coef (M.from_string_c "1"), lcmlt) then aux rest g fss
         else (
-          let s = snd (division g (s_poly fi fj)) in
+          let s = snd (division_n g (s_poly fi fj)) in
           (*print_endline (to_string s);*)
-          if is_zero s then aux rest g fss
+          if is_zero_n s then aux rest g fss
           else 
-          aux (worklist @ (List.mapi (fun i _ -> (i, t+1)) fss)) (List.rev (List.sort compare (minimize (s :: g)))) (fss @ [s])
+            aux (worklist @ (List.mapi (fun i _ -> (i, t+1)) fss)) (List.rev (List.sort compare_n (minimize (s :: g)))) (fss @ [s]) (*check this sorting *)
         )
     in
-    let sortfs = List.rev (List.sort compare (List.map sort_poly fs)) in
+    let norm_fs = List.rev (List.sort compare_n (List.map normalize fs)) in
     let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
-    aux (get_pairs (List.mapi (fun i _ -> i) sortfs)) sortfs sortfs
+    let norm_g = aux (get_pairs (List.mapi (fun i _ -> i) norm_fs)) norm_fs norm_fs in
+    List.map unnormalize norm_g
+
 
 
 end

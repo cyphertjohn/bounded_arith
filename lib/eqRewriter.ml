@@ -298,8 +298,9 @@ let rewrite terms vars_to_keep t =
     (*let tvars = term_vars term_map in*)
     let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map get_vars (tp::ps))) in
     log_keep_map keep_map;
+    (*P.set_ord (fun a b -> Log.log_time_cum "Monomial order" ((effective_deg_ord deg_map keep_map) a) b);*)
     P.set_ord (effective_deg_ord deg_map keep_map);
-    let g_basis = P.improved_buchberger ps in
+    let g_basis = Log.log_time_cum "Grobner" P.improved_buchberger ps in
     update_map g_basis t_map ps tp 
   in
   let rec loop old_map t_map tp ps =
