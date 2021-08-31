@@ -254,10 +254,10 @@ module MakeP (M : sig
     else if M.is_one norm_c then is_neg, (monic_mon_to_string (Prod m))
     else is_neg, (M.to_string_c norm_c) ^ (monic_mon_to_string (Prod m)) 
 
-  let monomial_to_string mon = 
+  (*let monomial_to_string mon = 
     let (is_neg, mons) = mon_to_string mon in
     if is_neg then "-" ^ mons
-    else mons
+    else mons*)
   
   let to_string_n (NSum p) = 
     let folder (acc, first) (is_neg, m_s) =
