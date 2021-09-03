@@ -5,6 +5,8 @@ module P = Poly.Make(Sigs.Q)
 
 module S = Map.Make(String)
 
+module VS = Set.Make(String)
+
 type 'a fun_app = Recip of ('a polynomial) | Floo of ('a polynomial)
 
 
@@ -53,6 +55,7 @@ let new_var () =
 
 let purify ex =
   let map_union _ _ _ = failwith "Duplicated fresh variable" in
+  let pure_vars = ref VS.empty in
   let rec aux e = 
     match e with
     | Coe x -> (Sum ([(Coef x, Prod [])]), ([], S.empty))
@@ -69,12 +72,14 @@ let purify ex =
       let (pure_n, (num_polys, num_map)) = aux n in
       let (pure_d, (den_polys, den_map)) = aux d in
       let new_variable = new_var () in
+      pure_vars := VS.add new_variable !pure_vars;
       let new_var_poly = Sum ([(Coef (Sigs.Q.from_string_c "1"), Prod[Exp (new_variable, 1)])]) in
       let new_poly = P.add (P.mult new_var_poly pure_d) P.minus_1 in
       (P.mult pure_n new_var_poly, (new_poly :: (num_polys @ den_polys), S.add new_variable (Recip pure_d) (S.union map_union num_map den_map)))
     | Floor x -> 
       let (pure_x, (x_polys, x_map)) = aux x in
       let new_variable = new_var () in
+      pure_vars := VS.add new_variable !pure_vars;
       (Sum ([(Coef (Sigs.Q.from_string_c "1"), Prod[Exp (new_variable, 1)])]), (x_polys, S.add new_variable (Floo pure_x) x_map))
     | Pow (base, exp) ->
       let (pure_base, (base_polys, base_map)) = aux base in
@@ -82,6 +87,7 @@ let purify ex =
       else
         let neg_exp = (-1) * exp in
         let new_variable = new_var () in
+        pure_vars := VS.add new_variable !pure_vars;
         let new_var_poly = Sum ([(Coef (Sigs.Q.from_string_c "1"), Prod[Exp (new_variable, 1)])]) in
         let mul = P.mult new_var_poly pure_base in
         let new_poly = P.add mul P.minus_1 in
@@ -89,7 +95,7 @@ let purify ex =
         res
     in
   let res_poly, (new_const, term_map) = aux ex in
-  res_poly :: new_const, term_map
+  res_poly :: new_const, term_map, !pure_vars
 
 let get_vars (Sum poly) = 
   let get_vars_m (_, Prod mon) = 
@@ -148,7 +154,7 @@ let calc_deg_map term_map =
   S.mapi dummy term_map
     
 
-let effective_deg_ord deg_map keep_map (Prod a) (Prod b) =
+let effective_deg_ord deg_map keep_map pure_vars (Prod a) (Prod b) =
   let folder (rem_deg, keep_deg) (Exp (v, d)) = 
     if S.find v keep_map then 
       if S.mem v deg_map then (rem_deg, keep_deg + d * (S.find v deg_map))
@@ -159,7 +165,28 @@ let effective_deg_ord deg_map keep_map (Prod a) (Prod b) =
   in
   let (a_deg, b_deg) = (List.fold_left folder (0, 0) a, List.fold_left folder (0, 0) b) in
   if (fst a_deg = fst b_deg) then 
-    if (snd a_deg = snd b_deg) then Poly.lex_ord (Prod a) (Prod b)
+    if (snd a_deg = snd b_deg) then
+      let cmp_var (Exp (x, xe)) (Exp (y, ye)) = 
+        if x = y then compare xe ye
+        else if VS.mem x pure_vars then
+          if VS.mem y pure_vars then
+            compare x y
+          else 1
+        else if VS.mem y pure_vars then -1
+        else compare x y
+      in
+      let rec well_formed_lex al bl =
+        match al, bl with
+        | [], [] -> 0
+        | _ :: _ , [] -> -1
+        | [], _ :: _ -> 1
+        | x :: xs, y :: ys ->
+          let cmp_res = cmp_var x y in
+          if cmp_res = 0 then well_formed_lex xs ys
+          else cmp_res
+      in
+      let (a_s, b_s) = (List.rev (List.sort cmp_var a), List.rev (List.sort cmp_var b)) in
+      well_formed_lex a_s b_s
     else compare (snd a_deg) (snd b_deg)
   else compare (fst a_deg) (fst b_deg)
 
@@ -276,11 +303,11 @@ let equal_t_map a b =
     provided the equalities tx = 0 for all tx in terms. *)
 let rewrite terms vars_to_keep t = 
   P.set_ord (Poly.lex_ord);
-  let foldr (old_pol, old_tmap) term =
-    let (pols, tmap) = purify term in
-    (old_pol @ pols, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap)
+  let foldr (old_pol, old_tmap, old_pure_vars) term =
+    let (pols, tmap, pure_vars) = purify term in
+    (old_pol @ pols, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap, VS.union old_pure_vars pure_vars)
   in
-  let (t_and_polys, term_map) = List.fold_left foldr ([], S.empty) (t :: terms) in
+  let (t_and_polys, term_map, pure_vars) = List.fold_left foldr ([], S.empty, VS.empty) (t :: terms) in
   let (t_poly, polys) = match t_and_polys with
     | t_p :: rest -> (t_p, rest)
     | [] -> failwith "t has become empty"
@@ -299,7 +326,7 @@ let rewrite terms vars_to_keep t =
     let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map get_vars (tp::ps))) in
     log_keep_map keep_map;
     (*P.set_ord (fun a b -> Log.log_time_cum "Monomial order" ((effective_deg_ord deg_map keep_map) a) b);*)
-    P.set_ord (effective_deg_ord deg_map keep_map);
+    P.set_ord (effective_deg_ord deg_map keep_map pure_vars);
     let g_basis = Log.log_time_cum "Grobner" P.improved_buchberger ps in
     update_map g_basis t_map ps tp 
   in
