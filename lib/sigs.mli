@@ -1,25 +1,5 @@
 (**Module for keeping type signatures across the project. *)
 
-(**Module for polynomial types*)
-module Polynomial : sig
-
-    (**A variable raised to an integer power. *)
-    type var_power = Exp of string * int
-
-    (**A monic monimial is a product of exponentiated variables. *)
-    type monic_mon = Prod of var_power list
-
-    (**In general polynomials can be parametric, based on the type of the coeficients used. 
-    Really this is here to allow for string coeficients out of the parser, and then rational coeficients later. *)
-    type 'a coef = Coef of 'a 
-
-    (**A monomial is a coeficient and a monic monomial. *)
-    type 'a monomial = ('a coef) * monic_mon
-
-    (**A polynomial is a sum of monomials. *)
-    type 'a polynomial = Sum of ('a monomial) list
-end 
-
 (**Signature for field values. *)
 module type Coefficient = sig 
     (** The type of constants *)

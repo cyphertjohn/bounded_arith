@@ -1,15 +1,3 @@
-module Polynomial = struct
-    type var_power = Exp of string * int
-
-    type monic_mon = Prod of var_power list
-
-    type 'a coef = Coef of 'a 
-
-    type 'a monomial = ('a coef) * monic_mon
-
-    type 'a polynomial = Sum of ('a monomial) list
-end 
-
 module type Coefficient = sig 
     type coef 
     val addc : coef -> coef -> coef 

@@ -1,57 +1,82 @@
-(** Polynomial operations. *)
+module type Polynomial =
+  sig
+  type mon
 
-open Sigs.Polynomial
+  type poly
 
-(** A default lexicographic order. *)
-val lex_ord : monic_mon -> monic_mon -> int
+  (** Get the monomials of a polynomial *)
+  val get_mons : poly -> mon list
 
-(** A default graded lexicographic order. *)
-val grlex_ord : monic_mon -> monic_mon -> int
+  (** Get the degree of a variable in a given monomial *)
+  val get_degree : string -> mon -> int
+
+  (** Get the vars of the monomial *)
+  val get_vars_m : mon -> string list
+
+  (**Computes the sum of two polynomials. *)
+  val add :
+    poly -> poly -> poly
+
+  (** Multiplies two polynomials. *)
+  val mul :
+    poly -> poly -> poly
+    
+  (** Exponentiates a polynomial to some integer power.*)
+  val exp_poly : poly -> int -> poly
+
+  (** [substitute (x, p) q] substitutes [p] for every occurrence of [x] in [q].*)
+  val substitute :
+    string * poly -> poly -> poly
+
+  (** Test if a polynomial is zero. *)
+  val is_zero : poly -> bool
+
+  (** Polynomial comparison. The result does not correspond to any arithmetic order.*)
+  val compare : poly -> poly -> int
+    
+  (** Parses a string as a polynomial. *)
+  val from_string : string -> poly
+
+  (** Creates a polynomial out of a variable *)
+  val from_var : string -> poly
+
+  (** Creates a polynomial from a scalar constant given as a string*)
+  val from_const_s : string -> poly
+
+  (** Creates a polynomial from a variable and degree. *)
+  val from_var_pow : string -> int -> poly
+
+  (** Negates a polynomial *)
+  val negate : poly -> poly
+
+  (** Converts a polynomial to a string *)
+  val to_string : poly -> string
+
+  (** Gets the variables from a polynomial *)
+  val get_vars : poly -> string list
+
+  end
 
 (** A functor for manipulating polynomials whose coeficients functions are given as input. *)
 module Make :
   functor (C : Sigs.Coefficient) ->
   sig
-    
-    (**A function to set the monomial order. On initialization, a lex order is used.*)
-    val set_ord :
-      (monic_mon -> monic_mon -> int) -> unit
+    include Polynomial
 
-    (**Computes the sum of two polynomials. *)
-    val add :
-      C.coef polynomial -> C.coef polynomial -> C.coef polynomial
+    val from_const : C.coef -> poly
 
-    (** Multiplies two polynomials. *)
-    val mult :
-      C.coef polynomial -> C.coef polynomial -> C.coef polynomial
-    
-    (** Exponentiates a polynomial to some integer power.*)
-    val exp_poly : C.coef polynomial -> int -> C.coef polynomial
+    val get_coef : mon -> C.coef
+  end
 
-    (** Uses the multivariate division algorithm to divide a polynomial a list of divisors. 
-    The result is a pair where the first element is a list of multiples of the divisors and the second element is the remainder.*)
-    val division : C.coef polynomial list -> C.coef polynomial -> C.coef polynomial list * C.coef polynomial
+module Ideal :
+  functor (C : Sigs.Coefficient) -> 
+  sig
+    type t
 
-    (** Computes a Grobner basis. *)
-    val improved_buchberger : C.coef polynomial list -> C.coef polynomial list
+    val add_polys : Make(C).poly list -> t -> t
 
-    (** [substitute (x, p) q] substitutes [p] for every occurrence of [x] in [q].*)
-    val substitute :
-      string * C.coef polynomial -> C.coef polynomial -> C.coef polynomial
+    val initialize : (Make(C).mon -> Make(C).mon -> int) -> t
 
-    (** Test if a polynomial is zero. *)
-    val is_zero : C.coef polynomial -> bool
-
-    (** Polynomial comparison. The result does not correspond to any arithmetic order.*)
-    val compare : C.coef polynomial -> C.coef polynomial -> int
-    
-    (** Parses a string as a polynomial. *)
-    val from_string : string -> C.coef polynomial
-
-    (** Converts a polynomial to a string. *)
-    val to_string : C.coef polynomial -> string
-
-    (** The constant -1 as a polynomial. *)
-    val minus_1 : C.coef polynomial
+    val reduce : Make(C).poly -> t -> Make(C).poly * t
 
   end

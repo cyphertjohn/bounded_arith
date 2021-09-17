@@ -3,13 +3,24 @@
  (synopsis "A library for generating symbolic bounds")
  (public_name bound)
  (private_modules polyLexer polyParse expLexer expParse)
- (libraries zarith))
+ (libraries zarith batteries))
 
 (ocamllex
 (modules polyLexer expLexer))
 
 (menhir
-(modules polyParse expParse))
+(modules polyTokens)
+(flags --only-tokens)
+)
+
+(menhir
+(modules polyTokens polyParse)
+(merge_into polyParse)
+(flags --external-tokens PolyTokens)
+)
+
+(menhir
+(modules expParse))
 
 ;(env
 ; (dev
