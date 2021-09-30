@@ -10,6 +10,9 @@ depends: [
   "dune" {>= "2.8"}
   "zarith" {build}
   "menhir" {build}
+  "lp"     {build}
+  "lp-glpk" {build}
+  "batteries" {build}
   "odoc" {with-doc}
 ]
 build: [

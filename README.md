@@ -1,11 +1,11 @@
 # Term Rewriter
 
 ## Dependencies
-This code requires an ocaml interface the the GNU MultiPrecision library (gmp).
+This code requires an ocaml interface to the GNU MultiPrecision library (gmp) as well as GNU Linear Programming library (glpk).
 
 For ocaml opam is also helpful. To install these dependencies on Ubuntu run:
 
-`sudo apt-get install opam libgmp-dev libmpfr-dev`
+`sudo apt-get install opam libgmp-dev libmpfr-dev libglpk-dev`
 
 To initialize opam run:
 
@@ -25,18 +25,6 @@ To build the library MyLib run:
 `dune build`
 
 ## Usage
-For now I've been using utop to interact with the library. To do this run:
+For now I've been using utop to interact with the library. 
 
-`dune utop lib`
-
-which launches utop with the library defined in the lib directory.
-
-To launch utop with additional libraries, for example str, run
-
-`dune utop lib -- -require str`
-
-Then inside utop files can be loaded with
-
-`#use "examples/elastic.ml"`
-
-for example
+Running `dune build` will create a custom utop with the library already loaded on startup. To interact with the library run `./mytoplevel.exe` after building.
