@@ -34,6 +34,10 @@ module type Coefficient = sig
 
     (**Floor function. *)
     val floor : coef -> coef
+
+    val to_float : coef -> float
+
+    val of_float : float -> coef
 end
 
 (**Q is an implementation of rational arithmetic using zarith. *)

@@ -10,6 +10,8 @@ module type Coefficient = sig
     val to_string_c : coef -> string
     val cmp : coef -> coef -> int
     val floor : coef -> coef
+    val to_float : coef -> float
+    val of_float : float -> coef
 end
 
 
@@ -25,6 +27,8 @@ module Q : Coefficient = struct
     let from_string_c = Q.of_string
     let cmp = Q.compare
     let floor x = Q.of_bigint (Q.num x)
+    let to_float = Q.to_float
+    let of_float = Q.of_float
 end
 
 module Expr = struct

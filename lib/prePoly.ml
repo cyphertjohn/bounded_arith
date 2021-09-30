@@ -6,8 +6,6 @@ module MakeMon (C : Sigs.Coefficient) = struct
 
   type monic_mon = Prod of var_power list
 
-  type monomial = coef * monic_mon
-
   let get_deg (Exp (_, e)) = e
 
   let cmp_var (Exp(x, e1)) (Exp(y, e2)) = if compare x y = 0 then compare e1 e2 else -1 * (compare x y)
@@ -34,44 +32,41 @@ module MakeMon (C : Sigs.Coefficient) = struct
 
   let sort_monomial (coef, mon) = (coef, sort_monic_mon mon)
 
-  type mon = N of monomial
+  type mon = coef * monic_mon
 
-  let zero = N (C.from_string_c "0", Prod [])
+  let zero = C.from_string_c "0", Prod []
 
-  let minus_1 = N (C.from_string_c "-1", Prod [])
+  let minus_1 = C.from_string_c "-1", Prod []
 
-  let is_zero (N (c, _)) = C.is_zero c
+  let is_zero (c, _) = C.is_zero c
 
-  let make_mon_from_coef c = N (c, Prod [])
+  let make_mon_from_coef c = c, Prod []
 
-  let make_mon_from_var v d = N (C.from_string_c "1", Prod[Exp(v, d)])
+  let make_mon_from_var v d = C.from_string_c "1", Prod[Exp(v, d)]
   
-  let get_monic_mon (N (_, mon)) = mon
-  
-  let get_coef (N (c, _)) = c
 
   let add_mon a b = 
     if is_zero a then Some b
     else if is_zero b then Some a
     else
-      let (N (ac, amon), N (bc, bmon)) = (a, b) in
+      let (ac, amon), (bc, bmon) = (a, b) in
       if amon = bmon then 
         let c = C.addc ac bc in
         if C.is_zero c then Some zero
-        else Some (N ((C.addc ac bc), amon))
+        else Some ((C.addc ac bc), amon)
       else None
     
 
   let mult_mon a b = 
-    let new_coef = C.mulc (get_coef a) (get_coef b) in
-    if (C.is_zero new_coef) then N (new_coef, Prod [])
+    let new_coef = C.mulc (fst a) (fst b) in
+    if (C.is_zero new_coef) then new_coef, Prod []
     else 
-      let (Prod l1, Prod l2) = (get_monic_mon a, get_monic_mon b) in
+      let (Prod l1, Prod l2) = (snd a, snd b) in
       let rec zip m1 m2 acc =
         match (m1, m2) with 
-        | ([], []) -> N (new_coef, Prod (List.rev acc))
-        | (_, []) -> N (new_coef, Prod ((List.rev acc) @ m1))
-        | ([], _) -> N (new_coef, Prod ((List.rev acc) @ m2))
+        | ([], []) -> (new_coef, Prod (List.rev acc))
+        | (_, []) -> (new_coef, Prod ((List.rev acc) @ m1))
+        | ([], _) -> (new_coef, Prod ((List.rev acc) @ m2))
         | ((Exp (x, e1)) :: xs, Exp (y, e2) :: ys) -> 
           if x = y then zip xs ys ((Exp (y, e1+e2)) :: acc)
           else if compare x y < 0 then zip xs m2 ((Exp (x, e1)) :: acc)
@@ -81,11 +76,11 @@ module MakeMon (C : Sigs.Coefficient) = struct
 
 
   let divide_mon a b = 
-    let b_coef = get_coef b in
+    let b_coef = fst b in
     if C.is_zero b_coef then failwith "Divide by 0";
-    let new_coef = C.divc (get_coef a) (get_coef b) in
-    let (Prod vars) = get_monic_mon b in
-    let (Prod alist) = get_monic_mon a in
+    let new_coef = C.divc (fst a) (fst b) in
+    let (Prod vars) = snd b in
+    let (Prod alist) = snd a in
     let rec var_divide rema remb acc =
       match (rema, remb) with
       | [], [] -> Some (List.rev acc)
@@ -100,9 +95,9 @@ module MakeMon (C : Sigs.Coefficient) = struct
     in
     match (var_divide alist vars []) with
     | None -> None
-    | Some new_mon -> Some (N (new_coef, Prod new_mon))
+    | Some new_mon -> Some (new_coef, Prod new_mon)
   
-  let lcm_of_mon (N (_, Prod a)) (N (_, Prod b)) = 
+  let lcm_of_mon (Prod a) (Prod b) = 
     let rec aux x y acc =
       match (x, y) with
       | ([], _) -> y @ acc
@@ -112,21 +107,18 @@ module MakeMon (C : Sigs.Coefficient) = struct
         else if xvar < yvar then Exp(xvar, e1) :: (aux xs y acc)
         else Exp(yvar, e2) :: (aux ys x acc)
     in
-    N ((C.from_string_c "1"), Prod (aux a b []))
+    Prod (aux a b [])
 
-  let mon_ord (N (c1, m1)) (N (c2, m2)) = 
-    let order = lex_ord m1 m2 in
-    if order = 0 then C.cmp c1 c2 else order
 
-  let ord = ref mon_ord
+  let ord = ref lex_ord
 
-  let degree v (N (_, Prod l)) = 
+  let degree v (Prod l) = 
     let var_exp = List.find_opt (fun (Exp (x, _)) -> v = x) l in
     match var_exp with
     | None -> 0
     | Some (Exp (_, d)) -> d
     
-  let get_vars (N (_, Prod l)) = 
+  let get_vars (Prod l) = 
     let folder acc (Exp (v, _)) = 
       if List.mem v acc then acc
       else v :: acc
@@ -136,7 +128,7 @@ module MakeMon (C : Sigs.Coefficient) = struct
   let var_power_to_string (Exp(x, e)) = if e > 1 then x ^ "^" ^ (string_of_int e) else x
   let monic_mon_to_string m = String.concat "" (List.map var_power_to_string (let Prod l = m in l))
 
-  let mon_to_string (N (c, Prod m)) =
+  let mon_to_string (c, Prod m) =
     let is_neg, norm_c = 
       if cmp c (from_string_c "0") < 0 then true, (mulc c (from_string_c "-1"))
       else false, c
@@ -144,31 +136,27 @@ module MakeMon (C : Sigs.Coefficient) = struct
     if m = [] then is_neg, to_string_c norm_c
     else if is_one norm_c then is_neg, (monic_mon_to_string (Prod m))
     else is_neg, (to_string_c norm_c) ^ (monic_mon_to_string (Prod m)) 
-
-  let equal_monics (N (_, a)) (N (_, b)) = a = b
   
 end
 
 
 module MakeP (M : sig
               include Sigs.Coefficient
-              type mon
+              type monic_mon
+              type mon = coef * monic_mon
               val make_mon_from_coef : coef -> mon
               val make_mon_from_var : string -> int -> mon
               val is_zero : mon -> bool
               val zero : mon
-              val ord : (mon -> mon -> int) ref
+              val ord : (monic_mon -> monic_mon -> int) ref
               val minus_1 : mon
-              val mon_ord : mon -> mon -> int
               val add_mon : mon -> mon -> mon option
               val mult_mon : mon -> mon -> mon
-              val get_coef : mon -> coef
               val divide_mon : mon -> mon -> mon option
-              val lcm_of_mon : mon -> mon -> mon
-              val degree : string -> mon -> int
-              val get_vars : mon -> string list
+              val lcm_of_mon : monic_mon -> monic_mon -> monic_mon
+              val degree : string -> monic_mon -> int
+              val get_vars : monic_mon -> string list
               val mon_to_string : mon -> bool * string
-              val equal_monics : mon -> mon -> bool
             end ) = struct
 
   let set_ord order = M.ord := order
@@ -191,12 +179,10 @@ module MakeP (M : sig
 
   let get_vars_m = M.get_vars
 
-  let get_coef = M.get_coef
-
   let get_mons (NSum l) = l
 
   let get_vars (NSum poly) = 
-    let with_dups = List.concat (List.map M.get_vars poly) in
+    let with_dups = List.concat (List.map (fun (_, m) -> M.get_vars m) poly) in
     let uniq_cons xs x = if List.mem x xs then xs else x :: xs in
     let remove_dups xs = List.fold_left uniq_cons [] xs in
     remove_dups with_dups
@@ -218,8 +204,15 @@ module MakeP (M : sig
       if List.length without_0 = 0 then NSum [M.zero]
       else NSum (without_0)
 
+  let mon_order (ac, am) (bc, bm) = 
+    let mon_cmp = !M.ord am bm in
+    if mon_cmp = 0 then M.cmp ac bc
+    else mon_cmp
+
   let normalize (NSum poly) = 
-    collect_terms_normal (NSum (List.rev (List.sort !M.ord poly)))
+    collect_terms_normal (NSum (List.rev (List.sort mon_order poly)))
+
+  let from_mons l = normalize (NSum l)
 
   let lt (NSum poly) = List.hd poly
 
@@ -228,7 +221,7 @@ module MakeP (M : sig
 
   (*let lm poly = M.get_monic_mon (lt poly)*)
 
-  let lc poly = M.get_coef (lt poly)
+  let lc poly = fst (lt poly)
 
   (*let monomial_to_string mon = 
     let (is_neg, mons) = mon_to_string mon in
@@ -262,7 +255,7 @@ module MakeP (M : sig
           if M.is_zero res then zip xs ys acc
           else zip xs ys (res :: acc)
         | None ->
-          if !M.ord m1 m2 > 0 then zip xs b (m1 :: acc)
+          if mon_order m1 m2 > 0 then zip xs b (m1 :: acc)
           else zip a ys (m2 :: acc))
     in
     let (NSum temp_res) = zip p1 p2 [] in
@@ -295,7 +288,7 @@ module MakeP (M : sig
     aux (e - 1) p
 
   let subsitute_mon (var, p1) mon =
-    let d = M.degree var mon in
+    let d = M.degree var (snd mon) in
     if d = 0 then NSum [mon]
     else
       match M.divide_mon mon (M.make_mon_from_var var d) with
@@ -314,7 +307,7 @@ module MakeP (M : sig
       | ([], []) -> 0
       | ([], _) -> -1
       | (_, []) -> 1
-      | (x :: xs, y :: ys) -> if !M.ord x y = 0 then aux xs ys else !M.ord x y
+      | (x :: xs, y :: ys) -> if mon_order x y = 0 then aux xs ys else mon_order x y
     in
     aux p1 p2
 

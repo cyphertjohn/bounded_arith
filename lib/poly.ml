@@ -1,61 +1,47 @@
-module type Polynomial =
+(*module type Polynomial =
   sig
-  type mon
+  type monic_mon
+
+  type mon = 
 
   type poly
 
-  (** Get the monomials of a polynomial *)
   val get_mons : poly -> mon list
 
-  (** Get the degree of a variable in a given monomial *)
   val get_degree : string -> mon -> int
 
-  (** Get the vars of the monomial *)
   val get_vars_m : mon -> string list
 
-  (**Computes the sum of two polynomials. *)
   val add :
     poly -> poly -> poly
 
-  (** Multiplies two polynomials. *)
   val mul :
     poly -> poly -> poly
     
-  (** Exponentiates a polynomial to some integer power.*)
   val exp_poly : poly -> int -> poly
 
-  (** [substitute (x, p) q] substitutes [p] for every occurrence of [x] in [q].*)
   val substitute :
     string * poly -> poly -> poly
 
-  (** Test if a polynomial is zero. *)
   val is_zero : poly -> bool
 
-  (** Polynomial comparison. The result does not correspond to any arithmetic order.*)
   val compare : poly -> poly -> int
     
-  (** Parses a string as a polynomial. *)
   val from_string : string -> poly
 
-  (** Creates a polynomial out of a variable *)
   val from_var : string -> poly
 
-  (** Creates a polynomial from a scalar constant given as a string*)
   val from_const_s : string -> poly
 
-  (** Creates a polynomial from a variable and degree. *)
   val from_var_pow : string -> int -> poly
 
-  (** Negates a polynomial *)
   val negate : poly -> poly
 
-  (** Converts a polynomial to a string *)
   val to_string : poly -> string
 
-  (** Gets the variables from a polynomial *)
   val get_vars : poly -> string list
 
-  end
+  end*)
 
 module Make (C : Sigs.Coefficient) = struct
 
@@ -69,7 +55,9 @@ module Make (C : Sigs.Coefficient) = struct
 
   include PP
 
-  type mon = M.mon
+  type monic_mon = M.monic_mon
+
+  type mon = C.coef * monic_mon
 
 end
 
@@ -78,11 +66,11 @@ module Ideal (C : Sigs.Coefficient) = struct
 
   include Make(C)
 
-  type t = bool * poly list
+  type ideal = bool * poly list
 
-  let initialize order : t = set_ord order; false, []
+  let initialize order : ideal = set_ord order; false, []
 
-  let add_polys l (_, i) : t = (false, (List.map normalize l) @ i)
+  let add_polys l (_, i) : ideal = (false, (List.map normalize l) @ i)
 
   let division divisors f =
     let find_map func lis = 
@@ -115,7 +103,7 @@ module Ideal (C : Sigs.Coefficient) = struct
     aux f (List.map (fun _ -> (NSum [M.zero])) divisors) (NSum [M.zero])
 
   let s_poly f g =
-    let lcmlm = M.lcm_of_mon (lt f) (lt g) in
+    let lcmlm = (M.from_string_c "1", M.lcm_of_mon (snd (lt f)) (snd (lt g))) in
     let f_m = M.divide_mon lcmlm (lt f) in
     let g_m = M.divide_mon lcmlm (lt g) in
     match (f_m, g_m) with
@@ -170,10 +158,10 @@ module Ideal (C : Sigs.Coefficient) = struct
         Log.log_line ~level:`trace "Current g:\n";
         List.iter (fun x -> Log.log_line ~level:`trace (to_string_n x)) g;*)
 
-        let lcmlt = M.lcm_of_mon (lt fi) (lt fj) in (* lt or lm? *)
+        let lcmlt = M.lcm_of_mon (snd (lt fi)) (snd (lt fj)) in (* lt or lm? *)
         let prod = (M.mult_mon (lt fi) (lt fj)) in
-        if criterion i j lcmlt then aux rest g fss
-        else if M.equal_monics lcmlt prod then aux rest g fss (* criterion *)
+        if criterion i j (M.from_string_c "1", lcmlt) then aux rest g fss
+        else if !M.ord lcmlt (snd prod) = 0 then aux rest g fss (* criterion *)
         else (
           (*Log.log_line ~level:`trace ("Found potential s_poly:");
           Log.log_line ~level:`trace ("\nfi: " ^ (to_string_n fi));
@@ -197,10 +185,123 @@ module Ideal (C : Sigs.Coefficient) = struct
     norm_g
 
 
-  let reduce p ((calc_grob, basis) : t) : poly * t = 
-    if calc_grob then (snd (division basis p)), (calc_grob, basis)
+  let reduce p ((calc_grob, basis) : ideal) : poly * ideal = 
+    if List.length basis = 0 then p, (calc_grob, basis)
+    else if calc_grob then (snd (division basis p)), (calc_grob, basis)
     else
       let grobner_basis = improved_buchberger basis in
       (snd (division grobner_basis p)), (true, grobner_basis)
+
+end
+
+module Cone(C : Sigs.Coefficient) = struct
+  module I = Ideal(C)
+  include I
+  
+  type cone = bool * I.ideal * poly list
+
+  let initialize order : cone = 
+    (false, I.initialize order, [])
+
+  let add_eqs polys ((_, ide, ineqs) : cone) : cone = (false, I.add_polys polys ide, ineqs)
+
+  let add_ineqs polys ((_, ide, old_ineqs) : cone) : cone = (false, ide, old_ineqs @ (List.map normalize polys))
+
+  module MonMap = BatMap.Make(struct type t = monic_mon let compare = !M.ord end)
+
+  module DimMap = BatIMap
+
+  module MonSet = BatSet.Make(struct type t = monic_mon let compare  = !M.ord end)
+
+  module S = BatMap.Make(struct type t = Lp.Poly.t let compare = Lp.Poly.compare end)
+
+  let polys_to_dim polys = 
+    let add_mons curr_set poly = 
+      List.fold_left (fun s m -> MonSet.add m s) curr_set (List.map snd (get_mons poly))
+    in
+    let mon_set = List.fold_left add_mons MonSet.empty polys in
+    let curr_dim = ref 0 in
+    let rec generate_dims curr_set curr_dim_map curr_mon_map = 
+      try 
+        let mon, new_set = MonSet.pop_max curr_set in
+        let new_dim_map = DimMap.add !curr_dim mon curr_dim_map in
+        let new_mon_map = MonMap.add mon !curr_dim curr_mon_map in
+        curr_dim := !curr_dim + 1;
+        generate_dims new_set new_dim_map new_mon_map
+      with Not_found -> curr_dim_map, curr_mon_map
+    in
+    let dim_map, mon_map = generate_dims mon_set (DimMap.empty ~eq:(fun x y -> !M.ord x y = 0)) (MonMap.empty) in
+    let poly_to_coef_map poly = 
+      List.fold_left (fun acc (c, mon) -> 
+        let dim = MonMap.find mon mon_map in
+        DimMap.add dim c acc) (DimMap.empty ~eq:(fun x y -> M.cmp x y = 0)) (get_mons poly)
+    in
+    dim_map, List.map poly_to_coef_map polys
+    
+      
+  let reduce_ineq p ineqs = 
+    if List.length ineqs = 0 then p
+    else 
+      let neg_ineqs = ineqs (*List.map negate ineqs*) in
+      let dim_map, p_ineq = polys_to_dim (p :: neg_ineqs) in
+      let p_dim = List.hd p_ineq in
+      let ineq_dim = List.tl p_ineq in
+      let add_pos_mult i ineq = 
+        Lp.Poly.of_var (Lp.Var.make ~lb:0. ("lambda" ^ (string_of_int i))), ineq
+      in
+      let ineq_dim_lambda = List.mapi add_pos_mult ineq_dim in
+      let generate_cnstrs dim _ (hard_cnsts, r_cnsts, r_map) = 
+        let generate_lhs_sum sum (lambda, ineq) = 
+          try 
+            let dim_c = DimMap.find dim ineq in
+            Lp.Poly.(++) sum (Lp.Poly.expand (Lp.Poly.c (M.to_float dim_c)) lambda)
+          with Not_found -> sum
+          in
+        let sum = List.fold_left generate_lhs_sum (Lp.Poly.zero) ineq_dim_lambda in
+        let r = Lp.Poly.of_var (Lp.Var.make ("r" ^ (string_of_int dim))) in
+        let p_coef = 
+          try Lp.Poly.c (M.to_float (DimMap.find dim p_dim))
+          with Not_found -> Lp.Poly.zero
+        in
+        let new_cnst = Lp.Cnstr.eq (Lp.Poly.(++) sum r) p_coef in
+        let r_zero = Lp.Cnstr.eq r Lp.Poly.zero in
+        new_cnst :: hard_cnsts, r_zero :: r_cnsts, S.add r dim r_map
+      in
+      let hard_cnsts, r_cnsts, r_to_dim = DimMap.fold generate_cnstrs dim_map ([], [], S.empty) in
+      let rec find_optimal_sol rs = 
+        let prob = Lp.Problem.make (Lp.Objective.minimize Lp.Poly.zero) (hard_cnsts @ rs) in
+        match Lp_glpk.solve ~term_output:false prob with
+        | Ok (_, s) ->
+          let folder r_s r_val res = 
+            try
+              let r_val_c = M.of_float r_val in
+              if M.cmp r_val_c (M.from_string_c "0") = 0 then res
+              else 
+                let r_dim = S.find r_s r_to_dim in
+                let r_mon = DimMap.find r_dim dim_map in
+                (r_val_c, r_mon) :: res
+            with Not_found -> res
+          in
+          Lp.PMap.fold folder s []
+        | Error _ -> find_optimal_sol (List.tl rs)
+      in
+      from_mons (find_optimal_sol r_cnsts)
+        
+      
+
+  let reduce p ((cone_normal, ide, ineqs) : cone) : (poly * cone) = 
+    let (ideal, ineqs) = 
+      if not cone_normal then 
+        let reduce (old_ide, reduced_ineqs) ineq = 
+          let reduced_ineq, new_ide = I.reduce ineq old_ide in
+          new_ide, reduced_ineq :: reduced_ineqs
+        in
+        List.fold_left reduce (ide, []) ineqs
+    else (ide, ineqs)
+    in
+    let p_eq_red, ideal = I.reduce p ideal in
+    let p_ineq_red = reduce_ineq p_eq_red ineqs in
+    p_ineq_red, (true, ideal, ineqs)
+    
 
 end

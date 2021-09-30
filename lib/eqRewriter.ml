@@ -149,8 +149,8 @@ let unpurify_map term_map =
           let new_acc, term_ex, new_top_order = fun_app_to_expr curr_acc term old_top_order in
           S.add var term_ex new_acc, term_ex, var :: new_top_order
     and mon_to_expr curr_acc mon old_top_order= 
-      let mon_coef = P.get_coef mon in
-      let mon_vars = P.get_vars_m mon in
+      let mon_coef = fst mon in
+      let mon_vars = P.get_vars_m (snd mon) in
       let mon_folder (c_map, exs, o_top_order) var = 
         let new_map, var_exp, new_top_order = var_to_expr c_map var o_top_order in
         new_map, var_exp :: exs, new_top_order
@@ -239,9 +239,9 @@ let effective_deg_ord deg_map keep_map pure_vars top_order a b =
 
 let unpurify polys term_map =
   let unpure_map, top_order = unpurify_map term_map in
-  let mon_to_expr mon = 
+  let mon_to_expr (c, mon) = 
     let mon_vars = P.get_vars_m mon in
-    Mult (List.map 
+    Mult ((Coe c) :: (List.map 
       (fun mv -> 
         let deg = P.get_degree mv mon in
         if S.mem mv unpure_map then 
@@ -249,7 +249,7 @@ let unpurify polys term_map =
         else
           if deg = 1 then Var mv
           else Pow(Var mv, deg)
-      ) mon_vars)
+      ) mon_vars))
   in
   let poly_to_expr poly = Add (List.map mon_to_expr (P.get_mons poly)) in
   List.map (fun p -> Expr.simplify (poly_to_expr p)) polys, top_order

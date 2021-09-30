@@ -1,6 +1,10 @@
-module type Polynomial =
+(** A functor for manipulating polynomials whose coeficients functions are given as input. *)
+module Make :
+  functor (C : Sigs.Coefficient) ->
   sig
-  type mon
+  type monic_mon
+
+  type mon = C.coef * monic_mon
 
   type poly
 
@@ -8,10 +12,10 @@ module type Polynomial =
   val get_mons : poly -> mon list
 
   (** Get the degree of a variable in a given monomial *)
-  val get_degree : string -> mon -> int
+  val get_degree : string -> monic_mon -> int
 
   (** Get the vars of the monomial *)
-  val get_vars_m : mon -> string list
+  val get_vars_m : monic_mon -> string list
 
   (**Computes the sum of two polynomials. *)
   val add :
@@ -55,28 +59,34 @@ module type Polynomial =
   (** Gets the variables from a polynomial *)
   val get_vars : poly -> string list
 
-  end
+  val from_const : C.coef -> poly
 
-(** A functor for manipulating polynomials whose coeficients functions are given as input. *)
-module Make :
-  functor (C : Sigs.Coefficient) ->
-  sig
-    include Polynomial
-
-    val from_const : C.coef -> poly
-
-    val get_coef : mon -> C.coef
   end
 
 module Ideal :
   functor (C : Sigs.Coefficient) -> 
   sig
-    type t
+    type ideal
 
-    val add_polys : Make(C).poly list -> t -> t
+    val add_polys : Make(C).poly list -> ideal -> ideal
 
-    val initialize : (Make(C).mon -> Make(C).mon -> int) -> t
+    val initialize : (Make(C).monic_mon -> Make(C).monic_mon -> int) -> ideal
 
-    val reduce : Make(C).poly -> t -> Make(C).poly * t
+    val reduce : Make(C).poly -> ideal -> Make(C).poly * ideal
+
+  end
+
+module Cone :
+  functor (C : Sigs.Coefficient) -> 
+  sig
+    type cone
+
+    val add_eqs : Make(C).poly list -> cone -> cone
+
+    val add_ineqs : Make(C).poly list -> cone -> cone
+
+    val initialize : (Make(C).monic_mon -> Make(C).monic_mon -> int) -> cone
+
+    val reduce : Make(C).poly -> cone -> Make(C).poly * cone
 
   end
