@@ -287,7 +287,10 @@ module Cone(C : Sigs.Coefficient) = struct
       in
       from_mons (find_optimal_sol r_cnsts)
         
-      
+    
+  let reduce_eq p ((cone_normal, ide, ineqs) : cone) : (poly * cone) = 
+    let (res, new_id) = I.reduce p ide in
+    res, (cone_normal, new_id, ineqs)
 
   let reduce p ((cone_normal, ide, ineqs) : cone) : (poly * cone) = 
     let (ideal, ineqs) = 

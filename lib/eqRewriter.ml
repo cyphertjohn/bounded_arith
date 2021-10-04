@@ -2,7 +2,7 @@ open Sigs.Expr
 
 module P = Poly.Make(Sigs.Q)
 
-module I = Poly.Ideal(Sigs.Q)
+module C = Poly.Cone(Sigs.Q)
 
 module S = Map.Make(String)
 
@@ -255,20 +255,20 @@ let unpurify polys term_map =
   List.map (fun p -> Expr.simplify (poly_to_expr p)) polys, top_order
 
 let update_map id term_map polys t_p = 
-  let reduce v term (ideal, acc_map) =
+  let reduce v term (cone, acc_map) =
     match term with
     | Floo p -> 
-      let red, new_ideal = I.reduce p ideal in
-      new_ideal, S.add v (Floo red) acc_map
+      let red, new_cone = C.reduce_eq p cone in
+      new_cone, S.add v (Floo red) acc_map
     | Recip p ->
-      let red, new_ideal = I.reduce p ideal in
-      new_ideal, S.add v (Recip red) acc_map
+      let red, new_cone = C.reduce_eq p cone in
+      new_cone, S.add v (Recip red) acc_map
   in
-  let ideal, reduced_map = S.fold reduce term_map (id, S.empty) in
+  let cone, reduced_map = S.fold reduce term_map (id, S.empty) in
   let bindings = fst (List.split (S.bindings reduced_map)) in
   let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
   let pairs = get_pairs bindings in
-  let rec aux rm_pairs (old_polys, old_tp, old_map, old_ideal) =
+  let rec aux rm_pairs (old_polys, old_tp, old_map, old_cone) =
     match rm_pairs with
     | [] -> (old_polys, old_tp, old_map)
     | (x_i, x_j) :: l ->
@@ -284,18 +284,18 @@ let update_map id term_map polys t_p =
         in
         if (P.compare t_i t_j) = 0 then 
           let (new_p, new_t, new_map) = remove_var_sub x_i x_j old_polys old_tp old_map in
-          aux l (new_p, new_t, new_map, old_ideal) (*Potentially cheaper equality check*)
+          aux l (new_p, new_t, new_map, old_cone) (*Potentially cheaper equality check*)
         else
           let subtract_poly = P.add t_i (P.negate t_j) in
-          let sub_rem, new_ideal = I.reduce subtract_poly old_ideal in
+          let sub_rem, new_cone = C.reduce_eq subtract_poly old_cone in
           if P.is_zero sub_rem then 
             let (new_p, new_t, new_map) = remove_var_sub x_i x_j old_polys old_tp old_map in
-            aux l (new_p, new_t, new_map, new_ideal) (*Potentially cheaper equality check*)
-          else aux l (old_polys, old_tp, old_map, new_ideal)
-      | _ -> aux l (old_polys, old_tp, old_map, old_ideal)
+            aux l (new_p, new_t, new_map, new_cone) (*Potentially cheaper equality check*)
+          else aux l (old_polys, old_tp, old_map, new_cone)
+      | _ -> aux l (old_polys, old_tp, old_map, old_cone)
   in
-  let red_t, new_ideal = I.reduce t_p ideal in
-  aux pairs (polys, red_t, reduced_map, new_ideal)
+  let red_t, new_cone = C.reduce t_p cone in
+  aux pairs (polys, red_t, reduced_map, new_cone)
 
 let equal_t_map a b = 
   let a_keys = fst (List.split (S.bindings a)) in
@@ -343,8 +343,8 @@ let rewrite terms vars_to_keep t =
     let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::ps))) in
     log_keep_map keep_map;
     (*P.set_ord (fun a b -> Log.log_time_cum "Monomial order" ((effective_deg_ord deg_map keep_map) a) b);*)
-    let new_ideal = I.add_polys ps (I.initialize (effective_deg_ord deg_map keep_map pure_vars top_order)) in
-    update_map new_ideal t_map ps tp 
+    let new_cone = C.add_eqs ps (C.initialize (effective_deg_ord deg_map keep_map pure_vars top_order)) in
+    update_map new_cone t_map ps tp 
   in
   let rec loop old_map t_map tp ps =
     if equal_t_map old_map t_map then 
