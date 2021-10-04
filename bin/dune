@@ -3,13 +3,6 @@
   (libraries bound utop)
   (promote (until-clean) (into ..))
   (link_flags -linkall)
-  (flags :standard -cclib -lglpk)
   (modules mytoplevel)
   (modes byte)
 )
-
-;(executable
-;  (name linear)
-;  (libraries bound)
-;  (promote (until-clean) (into ..))
-;)

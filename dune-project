@@ -14,5 +14,6 @@
  (depends
    (zarith :build)
    (menhir :build)
+   (batteries :build)
  )
 )

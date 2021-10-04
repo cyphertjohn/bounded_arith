@@ -1,0 +1,25 @@
+(library
+ (name lpglpk)
+ (wrapped false)
+ (libraries lp ctypes ctypes.foreign)
+ (package bound)
+ (modules :standard \ gen)
+ (foreign_stubs
+  (language c)
+  (names stub)
+  (flags :standard -lglpk -w)
+ )
+ (c_library_flags :standard -lglpk)
+ )
+
+(executable
+  (name gen)
+  (modules gen)
+  (libraries ctypes.stubs ctypes)
+)
+
+(rule
+  (targets stub.c stub.ml)
+  (deps gen.exe)
+  (action (run ./gen.exe))
+)
