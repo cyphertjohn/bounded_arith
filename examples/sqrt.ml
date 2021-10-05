@@ -20,12 +20,12 @@ let equate s1 s2 = from_string (s1 ^ " - " ^ s2)
 let background_theory = [equate (vname n) "res"] @ (List.map (fun cur -> 
 																  equate (vname cur) (iter_str (vname (cur - 1)))) 
 													   (1--n))
-let tupper = Bound.EqRewriter.rewrite background_theory ["x"; (vname 0)] (from_string "x - (res)^2")
+let tupper = Bound.EqRewriter.rewrite background_theory [] ["x"; (vname 0)] (from_string "x - (res)^2")
 (* let tlower = Bound.EqRewriter.rewrite background_theory ["x"; (vname 0)] (from_string "(res)^2 - x") *)
 
 (* ************************************************************************************ *)
 
-let tupper_res = Bound.EqRewriter.rewrite [] ["x"; (vname 0)] (Bound.IneqRewriter.rewrite tupper)
+let tupper_res = Bound.EqRewriter.rewrite [] [] ["x"; (vname 0)] (Bound.IneqRewriter.rewrite tupper)
 (* let tlower_res = Bound.EqRewriter.rewrite [] ["x"; (vname 0)] (Bound.IneqRewriter.rewrite tlower) *)
 
 let p = to_string tupper_res

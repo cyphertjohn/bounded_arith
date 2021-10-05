@@ -12,8 +12,8 @@ let t3 = from_string "minimumPrice + priceRange - diff1 - price1"
 
 let vars_to_keep = ["minimumPrice"; "priceRange"; "startTime"; "timeRange"; "t1diff"]
 
-let tupper = Bound.EqRewriter.rewrite [t0;t1;t2;t3] vars_to_keep (from_string "price1 - startPrice")
-let tupper_res = Bound.EqRewriter.rewrite [] vars_to_keep (Bound.IneqRewriter.rewrite tupper)
+let tupper = Bound.EqRewriter.rewrite [t0;t1;t2;t3] [] vars_to_keep (from_string "price1 - startPrice")
+let tupper_res = Bound.EqRewriter.rewrite [] [] vars_to_keep (Bound.IneqRewriter.rewrite tupper)
 
 (* utop # to_string tupper;;
 - : string = "-t1difffloor(priceRange(startTime + timeRange)^(-1))"
@@ -22,8 +22,8 @@ utop # to_string tupper_res;;
 - : string = "t1diff - priceRanget1diff(startTime + timeRange)^(-1)"
 might not be. *)
 
-let tlower = Bound.EqRewriter.rewrite [t1;t2;t3] vars_to_keep (from_string "minimumPrice - price1")
-let tlower_res = Bound.EqRewriter.rewrite [] vars_to_keep (Bound.IneqRewriter.rewrite tlower)
+let tlower = Bound.EqRewriter.rewrite [t1;t2;t3] [] vars_to_keep (from_string "minimumPrice - price1")
+let tlower_res = Bound.EqRewriter.rewrite [] [] vars_to_keep (Bound.IneqRewriter.rewrite tlower)
 
 (* 
 utop # to_string tlower;;
@@ -41,8 +41,8 @@ let t3_2 = from_string "minimumPrice + priceRange - diff2 - price2"
 
 let vars_to_keep_2 = "telapsed" :: vars_to_keep
 
-let tmonotone = Bound.EqRewriter.rewrite [t0;t1;t2;t3;t0_2;t2_2;t3_2] vars_to_keep_2 (from_string "price2 - price1")
-let tmonotone_res = Bound.EqRewriter.rewrite [] vars_to_keep (Bound.IneqRewriter.rewrite tmonotone)
+let tmonotone = Bound.EqRewriter.rewrite [t0;t1;t2;t3;t0_2;t2_2;t3_2] [] vars_to_keep_2 (from_string "price2 - price1")
+let tmonotone_res = Bound.EqRewriter.rewrite [] [] vars_to_keep (Bound.IneqRewriter.rewrite tmonotone)
 (*
 utop # to_string tmonotone;;
 - : string = "-telapsedfloor(priceRange(startTime + timeRange)^(-1))"

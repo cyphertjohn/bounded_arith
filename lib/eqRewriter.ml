@@ -102,7 +102,7 @@ let purify ex =
         res
     in
   let res_poly, (new_const, term_map) = aux ex in
-  res_poly :: new_const, term_map, !pure_vars
+  res_poly, new_const, term_map, !pure_vars
 
 
 (*let term_vars map = 
@@ -318,42 +318,47 @@ let equal_t_map a b =
   
 (** Compute an upper bound for t over the variables in vars_to_keep,
     provided the equalities tx = 0 for all tx in terms. *)
-let rewrite terms vars_to_keep t = 
-  let foldr (old_pol, old_tmap, old_pure_vars) term =
-    let (pols, tmap, pure_vars) = purify term in
-    (old_pol @ pols, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap, VS.union old_pure_vars pure_vars)
+let rewrite eqs ineqs vars_to_keep t = 
+  let fold_eqs (old_eqs, old_tmap, old_pure_vars) term =
+    let (eq, derived_eqs, tmap, pure_vars) = purify term in
+    (eq :: old_eqs @ derived_eqs, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap, VS.union old_pure_vars pure_vars)
   in
-  let (t_and_polys, term_map, pure_vars) = List.fold_left foldr ([], S.empty, VS.empty) (t :: terms) in
-  let (t_poly, polys) = match t_and_polys with
-    | t_p :: rest -> (t_p, rest)
-    | [] -> failwith "t has become empty"
+  let (eqs, term_map, pure_vars) = List.fold_left fold_eqs ([], S.empty, VS.empty) eqs in
+  let fold_ineq (old_ineq, equat, old_tmap, old_pure_vars) term = 
+    let (ineq, derived_eqs, tmap, pure_vars) = purify term in
+    (ineq :: old_ineq, equat @ derived_eqs, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap, VS.union old_pure_vars pure_vars)
   in
+  let (ineqs, equat, term_map, pure_vars) = List.fold_left fold_ineq ([], eqs, term_map, pure_vars) ineqs in
+  let t_p, tp_eq, t_map, t_pure_vars = purify t in
+  let eqs = tp_eq @ equat in
+  let term_map, pure_vars = S.union (fun _ _ _ -> failwith "duplicate in term map") t_map term_map, VS.union t_pure_vars pure_vars in
   let keep_folder acc v =
     if S.mem v acc then acc
     else if List.mem v vars_to_keep then S.add v true acc
     else S.add v false acc
   in
-  let iteration t_map tp ps =
+  let iteration t_map tp equat ineq =
     log_term_map t_map;
     log_t tp;
-    log_polys ps;
+    log_polys equat;
     let deg_map, top_order = calc_deg_map t_map in
     log_top_order top_order;
     (*let tvars = term_vars term_map in*)
-    let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::ps))) in
+    let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equat @ ineqs))) in
     log_keep_map keep_map;
     (*P.set_ord (fun a b -> Log.log_time_cum "Monomial order" ((effective_deg_ord deg_map keep_map) a) b);*)
-    let new_cone = C.add_eqs ps (C.initialize (effective_deg_ord deg_map keep_map pure_vars top_order)) in
-    update_map new_cone t_map ps tp 
+    let new_cone = C.add_ineqs ineq (C.add_eqs equat (C.initialize (effective_deg_ord deg_map keep_map pure_vars top_order))) in
+    update_map new_cone t_map equat tp 
   in
-  let rec loop old_map t_map tp ps =
+  let rec loop old_map t_map tp equations inequalities =
     if equal_t_map old_map t_map then 
       let unpure_t, _ = unpurify [tp] t_map in
       List.hd (unpure_t)
     else
-      let (new_polys, new_t, new_map) = iteration t_map tp ps in
-      loop t_map new_map new_t new_polys
+      let (new_eqs, new_t, new_map) = iteration t_map tp equations inequalities in
+      loop t_map new_map new_t new_eqs inequalities
   in
-  loop S.empty term_map t_poly polys
+  let new_eqs, new_t, new_map = iteration term_map t_p eqs ineqs in
+  loop term_map new_map new_t new_eqs ineqs
 
   
