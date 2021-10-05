@@ -15,5 +15,7 @@
    (zarith :build)
    (menhir :build)
    (batteries :build)
+   (ctypes :build)
+   (ctypes-foreign :build)
  )
 )
