@@ -11,6 +11,8 @@ depends: [
   "zarith" {build}
   "menhir" {build}
   "batteries" {build}
+  "ctypes" {build}
+  "ctypes-foreign" {build}
   "odoc" {with-doc}
 ]
 build: [
