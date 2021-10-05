@@ -3,7 +3,7 @@
  (wrapped false)
  (libraries lp ctypes ctypes.foreign)
  (package bound)
- (modules :standard \ gen)
+ (modules :standard \ gen bindings)
  (foreign_stubs
   (language c)
   (names stub)
@@ -12,9 +12,9 @@
  (c_library_flags :standard -lglpk)
  )
 
-(executable
+ (executable
   (name gen)
-  (modules gen)
+  (modules gen bindings)
   (libraries ctypes.stubs ctypes)
 )
 
@@ -22,4 +22,10 @@
   (targets stub.c stub.ml)
   (deps gen.exe)
   (action (run ./gen.exe))
+)
+
+(rule
+  (targets bind.ml)
+  (deps bindings.ml)
+  (action (copy bindings.ml bind.ml))
 )
