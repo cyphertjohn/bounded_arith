@@ -435,3 +435,5 @@ let rec to_string e =
   in
   if negative then "-" ^ str
   else str
+
+let pp f e = Format.pp_print_string f (to_string e)

@@ -373,103 +373,103 @@ end
 module Bindings (F : FOREIGN) = struct
 open F
 
-  let set_term_out = F.foreign "glp_term_out" (BoolInt.t @-> returning void)
+  let set_term_out = foreign "glp_term_out" (BoolInt.t @-> returning void)
 
   type prob = unit ptr
 
   let prob : prob typ = ptr void
 
-  let create_prob = F.foreign "glp_create_prob" (void @-> returning prob)
+  let create_prob = foreign "glp_create_prob" (void @-> returning prob)
 
-  let delete_prob = F.foreign "glp_delete_prob" (prob @-> returning void)
+  let delete_prob = foreign "glp_delete_prob" (prob @-> returning void)
 
   let set_prob_name =
-    F.foreign "glp_set_prob_name" (prob @-> string @-> returning void)
+    foreign "glp_set_prob_name" (prob @-> string @-> returning void)
 
-  let get_prob_name = F.foreign "glp_get_prob_name" (prob @-> returning string)
+  let get_prob_name = foreign "glp_get_prob_name" (prob @-> returning string)
 
-  let set_obj_dir = F.foreign "glp_set_obj_dir" (prob @-> Dir.t @-> returning void)
+  let set_obj_dir = foreign "glp_set_obj_dir" (prob @-> Dir.t @-> returning void)
 
-  let get_obj_dir = F.foreign "glp_get_obj_dir" (prob @-> returning Dir.t)
+  let get_obj_dir = foreign "glp_get_obj_dir" (prob @-> returning Dir.t)
 
-  let add_rows = F.foreign "glp_add_rows" (prob @-> int @-> returning int)
+  let add_rows = foreign "glp_add_rows" (prob @-> int @-> returning int)
 
-  let add_cols = F.foreign "glp_add_cols" (prob @-> int @-> returning int)
+  let add_cols = foreign "glp_add_cols" (prob @-> int @-> returning int)
 
   let set_row_name =
-    F.foreign "glp_set_row_name" (prob @-> int @-> string @-> returning void)
+    foreign "glp_set_row_name" (prob @-> int @-> string @-> returning void)
 
-  let get_row_name = F.foreign "glp_get_row_name" (prob @-> int @-> returning string)
+  let get_row_name = foreign "glp_get_row_name" (prob @-> int @-> returning string)
 
   let set_col_name =
-    F.foreign "glp_set_col_name" (prob @-> int @-> string @-> returning void)
+    foreign "glp_set_col_name" (prob @-> int @-> string @-> returning void)
 
-  let get_col_name = F.foreign "glp_get_col_name" (prob @-> int @-> returning string)
+  let get_col_name = foreign "glp_get_col_name" (prob @-> int @-> returning string)
 
   let set_row_bnds =
-    F.foreign "glp_set_row_bnds"
+    foreign "glp_set_row_bnds"
       (prob @-> int @-> Bnd.t @-> double @-> double @-> returning void)
 
   let set_col_bnds =
-    F.foreign "glp_set_col_bnds"
+    foreign "glp_set_col_bnds"
       (prob @-> int @-> Bnd.t @-> double @-> double @-> returning void)
 
   let set_obj_coef =
-    F.foreign "glp_set_obj_coef" (prob @-> int @-> double @-> returning void)
+    foreign "glp_set_obj_coef" (prob @-> int @-> double @-> returning void)
 
   let set_mat_row =
-    F.foreign "glp_set_mat_row"
+    foreign "glp_set_mat_row"
       (prob @-> int @-> int @-> ptr void @-> ptr void @-> returning void)
 
   let set_mat_col =
-    F.foreign "glp_set_mat_col"
+    foreign "glp_set_mat_col"
       (prob @-> int @-> int @-> ptr void @-> ptr void @-> returning void)
 
   let load_matrix =
-    F.foreign "glp_load_matrix"
+    foreign "glp_load_matrix"
       (prob @-> int @-> ptr void @-> ptr void @-> ptr void @-> returning void)
 
   let set_col_kind =
-    F.foreign "glp_set_col_kind" (prob @-> int @-> Vt.t @-> returning void)
+    foreign "glp_set_col_kind" (prob @-> int @-> Vt.t @-> returning void)
 
-  let get_col_kind = F.foreign "glp_get_col_kind" (prob @-> int @-> returning Vt.t)
+  let get_col_kind = foreign "glp_get_col_kind" (prob @-> int @-> returning Vt.t)
 
-  let get_num_rows = F.foreign "glp_get_num_rows" (prob @-> returning int)
+  let get_num_rows = foreign "glp_get_num_rows" (prob @-> returning int)
 
-  let get_num_cols = F.foreign "glp_get_num_cols" (prob @-> returning int)
+  let get_num_cols = foreign "glp_get_num_cols" (prob @-> returning int)
 
-  let get_num_nz = F.foreign "glp_get_num_nz" (prob @-> returning int)
+  let get_num_nz = foreign "glp_get_num_nz" (prob @-> returning int)
 
-  let get_num_int = F.foreign "glp_get_num_int" (prob @-> returning int)
+  let get_num_int = foreign "glp_get_num_int" (prob @-> returning int)
 
-  let get_num_bin = F.foreign "glp_get_num_bin" (prob @-> returning int)
+  let get_num_bin = foreign "glp_get_num_bin" (prob @-> returning int)
 
-  let init_smcp = F.foreign "glp_init_smcp" (ptr Smcp.t @-> returning void)
+  let init_smcp = foreign "glp_init_smcp" (ptr Smcp.t @-> returning void)
 
-  let init_iocp = F.foreign "glp_init_iocp" (ptr Iocp.t @-> returning void)
+  let init_iocp = foreign "glp_init_iocp" (ptr Iocp.t @-> returning void)
 
-  let simplex = F.foreign "glp_simplex" (prob @-> ptr Smcp.t @-> returning int)
+  let simplex = foreign "glp_simplex" (prob @-> ptr Smcp.t @-> returning int)
 
-  let intopt = F.foreign "glp_intopt" (prob @-> ptr Iocp.t @-> returning int)
+  let intopt = foreign "glp_intopt" (prob @-> ptr Iocp.t @-> returning int)
 
-  let get_status = F.foreign "glp_get_status" (prob @-> returning Stat.t)
+  let get_status = foreign "glp_get_status" (prob @-> returning Stat.t)
 
-  let mip_status = F.foreign "glp_mip_status" (prob @-> returning Stat.t)
+  let mip_status = foreign "glp_mip_status" (prob @-> returning Stat.t)
 
-  let get_obj_val = F.foreign "glp_get_obj_val" (prob @-> returning double)
+  let get_obj_val = foreign "glp_get_obj_val" (prob @-> returning double)
 
-  let mip_obj_val = F.foreign "glp_mip_obj_val" (prob @-> returning double)
+  let mip_obj_val = foreign "glp_mip_obj_val" (prob @-> returning double)
 
-  let get_row_prim = F.foreign "glp_get_row_prim" (prob @-> int @-> returning double)
+  let get_row_prim = foreign "glp_get_row_prim" (prob @-> int @-> returning double)
 
-  let get_row_dual = F.foreign "glp_get_row_dual" (prob @-> int @-> returning double)
+  let get_row_dual = foreign "glp_get_row_dual" (prob @-> int @-> returning double)
 
-  let mip_row_val = F.foreign "glp_mip_row_val" (prob @-> int @-> returning double)
+  let mip_row_val = foreign "glp_mip_row_val" (prob @-> int @-> returning double)
 
-  let get_col_prim = F.foreign "glp_get_col_prim" (prob @-> int @-> returning double)
+  let get_col_prim = foreign "glp_get_col_prim" (prob @-> int @-> returning double)
 
-  let get_col_dual = F.foreign "glp_get_col_dual" (prob @-> int @-> returning double)
+  let get_col_dual = foreign "glp_get_col_dual" (prob @-> int @-> returning double)
 
-  let mip_col_val = F.foreign "glp_mip_col_val" (prob @-> int @-> returning double)
+  let mip_col_val = foreign "glp_mip_col_val" (prob @-> int @-> returning double)
 
 end

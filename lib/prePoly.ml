@@ -237,6 +237,8 @@ module MakeP (M : sig
     in
     fst (List.fold_left folder ("", true) (List.map M.mon_to_string p))
 
+  let pp f p = Format.pp_print_string f (to_string p)
+
 (*  let add_mon (Coef c1, m) (Sum a) =
     if a = [] then Sum [(Coef c1, m)]
     else if (List.exists (fun (Coef _, m2) -> !ord m m2 = 0) a) then

@@ -11,3 +11,5 @@ val from_string : string -> Sigs.Q.coef Sigs.Expr.expr
 
 (** Converts an expression to a string. *)
 val to_string : Sigs.Q.coef Sigs.Expr.expr -> string
+
+val pp : Format.formatter -> Sigs.Q.coef Sigs.Expr.expr -> unit [@@ocaml.toplevel_printer]

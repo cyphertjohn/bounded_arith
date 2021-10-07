@@ -62,6 +62,8 @@ module Make :
   (** Initialize a polynomial from a constant *)
   val from_const : C.coef -> poly
 
+  val pp : Format.formatter -> poly -> unit [@@ocaml.toplevel_printer]
+
   end
 
 (** An ideal of polynomial generators p_1, ..., p_n, is the set of polynomials f such that f = a_1p_1 + ... + a_np_n
