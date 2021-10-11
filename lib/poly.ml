@@ -198,14 +198,14 @@ module Cone(C : Sigs.Coefficient) = struct
   module I = Ideal(C)
   include I
   
-  type cone = bool * I.ideal * poly list
+  type cone = int * I.ideal * poly list
 
-  let initialize order : cone = 
-    (false, I.initialize order, [])
+  let initialize ?(sat = 1) order : cone = 
+    (sat, I.initialize order, [])
 
-  let add_eqs polys ((_, ide, ineqs) : cone) : cone = (false, I.add_polys polys ide, ineqs)
+  let add_eqs polys ((sat, ide, ineqs) : cone) : cone = (sat, I.add_polys polys ide, ineqs)
 
-  let add_ineqs polys ((_, ide, old_ineqs) : cone) : cone = (false, ide, old_ineqs @ (List.map normalize polys))
+  let add_ineqs polys ((sat, ide, old_ineqs) : cone) : cone = (sat, ide, old_ineqs @ (List.map normalize polys))
 
   module MonMap = BatMap.Make(struct type t = monic_mon let compare = !M.ord end)
 
@@ -292,19 +292,30 @@ module Cone(C : Sigs.Coefficient) = struct
     let (res, new_id) = I.reduce p ide in
     res, (cone_normal, new_id, ineqs)
 
-  let reduce p ((cone_normal, ide, ineqs) : cone) : (poly * cone) = 
-    let (ideal, ineqs) = 
-      if not cone_normal then 
-        let reduce (old_ide, reduced_ineqs) ineq = 
-          let reduced_ineq, new_ide = I.reduce ineq old_ide in
-          new_ide, reduced_ineq :: reduced_ineqs
+  let reduce p ((sat, ide, ineqs) : cone) : (poly * cone) = 
+    let rec saturate (acc, prev_level) level = 
+      if level <= 1 then acc @ prev_level
+      else 
+        let increase_level level ps = 
+          fst (List.fold_left 
+            (fun (a, r) p -> 
+              a @ (List.map (fun x -> mul p x) r), List.tl r
+            )
+          ([], ps) level)
         in
-        List.fold_left reduce (ide, []) ineqs
-    else (ide, ineqs)
+      saturate (acc @ prev_level, increase_level prev_level ineqs) (level - 1)
+    in
+    let saturated_ineqs = saturate ([], ineqs) sat in
+    let (ideal, saturated_ineqs) = 
+      let reduce (old_ide, reduced_ineqs) ineq = 
+        let reduced_ineq, new_ide = I.reduce ineq old_ide in
+        new_ide, reduced_ineq :: reduced_ineqs
+      in
+      List.fold_left reduce (ide, []) saturated_ineqs
     in
     let p_eq_red, ideal = I.reduce p ideal in
-    let p_ineq_red = reduce_ineq p_eq_red ineqs in
-    p_ineq_red, (true, ideal, ineqs)
+    let p_ineq_red = reduce_ineq p_eq_red saturated_ineqs in
+    p_ineq_red, (sat, ideal, ineqs)
     
 
 end

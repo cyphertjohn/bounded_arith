@@ -347,7 +347,7 @@ let rewrite eqs ineqs vars_to_keep t =
     let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equat @ ineqs))) in
     log_keep_map keep_map;
     (*P.set_ord (fun a b -> Log.log_time_cum "Monomial order" ((effective_deg_ord deg_map keep_map) a) b);*)
-    let new_cone = C.add_ineqs ineq (C.add_eqs equat (C.initialize (effective_deg_ord deg_map keep_map pure_vars top_order))) in
+    let new_cone = C.add_ineqs ineq (C.add_eqs equat (C.initialize ~sat:3 (effective_deg_ord deg_map keep_map pure_vars top_order))) in
     update_map new_cone t_map equat tp 
   in
   let rec loop old_map t_map tp equations inequalities =

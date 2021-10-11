@@ -101,7 +101,7 @@ module Cone :
     type cone
 
     (** An empty cone <0> intialized with a monomial order. *)
-    val initialize : (Make(C).monic_mon -> Make(C).monic_mon -> int) -> cone
+    val initialize : ?sat:int -> (Make(C).monic_mon -> Make(C).monic_mon -> int) -> cone
 
     (** Add equations to the cone. *)
     val add_eqs : Make(C).poly list -> cone -> cone
