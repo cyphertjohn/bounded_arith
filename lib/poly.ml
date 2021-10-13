@@ -1,16 +1,17 @@
-(*module type Polynomial =
-  sig
+module type Polynomial = sig
   type monic_mon
 
-  type mon = 
+  type coef
+
+  type mon = coef * monic_mon
 
   type poly
 
   val get_mons : poly -> mon list
 
-  val get_degree : string -> mon -> int
+  val get_degree : string -> monic_mon -> int
 
-  val get_vars_m : mon -> string list
+  val get_vars_m : monic_mon -> string list
 
   val add :
     poly -> poly -> poly
@@ -41,7 +42,8 @@
 
   val get_vars : poly -> string list
 
-  end*)
+  val from_const : coef -> poly
+end
 
 module Make (C : Sigs.Coefficient) = struct
 
@@ -59,8 +61,11 @@ module Make (C : Sigs.Coefficient) = struct
 
   type mon = C.coef * monic_mon
 
+  type coef = C.coef
+
 end
 
+module PQ = Make(Sigs.Q)
 
 module Ideal (C : Sigs.Coefficient) = struct
 
@@ -192,7 +197,33 @@ module Ideal (C : Sigs.Coefficient) = struct
       let grobner_basis = improved_buchberger basis in
       (snd (division grobner_basis p)), (true, grobner_basis)
 
+
+  let ppi f ((calc_grob, basis) : ideal) = 
+    let str = if calc_grob then "Grobner Basis: <" ^ (String.concat ", " (List.map to_string basis)) ^ ">"
+              else "Non Grobner Basis: <" ^ (String.concat ", " (List.map to_string basis)) ^ ">"
+    in
+    Format.pp_print_string f str
+
 end
+
+module type Cone = sig 
+    type cone
+
+    type poly
+
+    type monic_mon
+
+    val initialize : ?sat:int -> (monic_mon -> monic_mon -> int) -> cone
+
+    val add_eqs : poly list -> cone -> cone
+
+    val add_ineqs : poly list -> cone -> cone
+
+    val reduce : poly -> cone -> poly * cone
+
+    val reduce_eq : poly -> cone -> poly * cone
+end
+
 
 module Cone(C : Sigs.Coefficient) = struct
   module I = Ideal(C)
@@ -207,11 +238,11 @@ module Cone(C : Sigs.Coefficient) = struct
 
   let add_ineqs polys ((sat, ide, old_ineqs) : cone) : cone = (sat, ide, old_ineqs @ (List.map normalize polys))
 
-  module MonMap = BatMap.Make(struct type t = monic_mon let compare = !M.ord end)
+  module MonMap = BatMap.Make(struct type t = monic_mon let compare a b = mon_order (M.from_string_c "1", a) (M.from_string_c "1", b) end)
 
   module DimMap = BatIMap
 
-  module MonSet = BatSet.Make(struct type t = monic_mon let compare  = !M.ord end)
+  module MonSet = BatSet.Make(struct type t = monic_mon let compare a b = mon_order (M.from_string_c "1", a) (M.from_string_c "1", b) end)
 
   module S = BatMap.Make(struct type t = Lp.Poly.t let compare = Lp.Poly.compare end)
 
@@ -246,10 +277,12 @@ module Cone(C : Sigs.Coefficient) = struct
       let dim_map, p_ineq = polys_to_dim (p :: neg_ineqs) in
       let p_dim = List.hd p_ineq in
       let ineq_dim = List.tl p_ineq in
-      let add_pos_mult i ineq = 
-        Lp.Poly.of_var (Lp.Var.make ~lb:0. ("lambda" ^ (string_of_int i))), ineq
+      let lambdas = List.map Lp.Poly.neg (Array.to_list (Lp.Poly.range ~lb:0. ~start:0 (List.length ineq_dim) "lambda")) in
+      let ineq_dim_lambda = List.map2 (fun lambda ineq -> lambda, ineq) lambdas ineq_dim in
+      (*let add_pos_mult i ineq = 
+        Lp.Poly.of_var (Lp.Var.make ~ub:0. ("lambda" ^ (string_of_int i))), ineq
       in
-      let ineq_dim_lambda = List.mapi add_pos_mult ineq_dim in
+      let ineq_dim_lambda = List.mapi add_pos_mult ineq_dim in*)
       let generate_cnstrs dim _ (hard_cnsts, r_cnsts, r_map) = 
         let generate_lhs_sum sum (lambda, ineq) = 
           try 
@@ -270,6 +303,7 @@ module Cone(C : Sigs.Coefficient) = struct
       let hard_cnsts, r_cnsts, r_to_dim = DimMap.fold generate_cnstrs dim_map ([], [], S.empty) in
       let rec find_optimal_sol rs = 
         let prob = Lp.Problem.make (Lp.Objective.minimize Lp.Poly.zero) (hard_cnsts @ rs) in
+        Log.log_line ~level:`trace (Lp.Problem.to_string ~short:true prob);
         match Lp_glpk.solve ~term_output:false prob with
         | Ok (_, s) ->
           let folder r_s r_val res = 
@@ -319,3 +353,14 @@ module Cone(C : Sigs.Coefficient) = struct
     
 
 end
+
+module ConeQ = 
+  struct
+    include Cone(Sigs.Q)
+    
+    let ppc f ((_, i, ineqs) : cone) = 
+    ppi f i;
+    let str = "Ineqs: [" ^ (String.concat ", " (List.map to_string ineqs)) ^ "]" in
+    Format.pp_print_string f str
+
+  end

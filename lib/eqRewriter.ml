@@ -1,8 +1,9 @@
 open Sigs.Expr
 
-module P = Poly.Make(Sigs.Q)
 
-module C = Poly.Cone(Sigs.Q)
+module P = Poly.PQ
+
+module C = Poly.ConeQ
 
 module S = Map.Make(String)
 

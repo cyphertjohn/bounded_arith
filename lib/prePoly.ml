@@ -237,6 +237,10 @@ module MakeP (M : sig
     in
     fst (List.fold_left folder ("", true) (List.map M.mon_to_string p))
 
+  let ppm f m = Format.pp_print_string f (to_string (NSum [m]))
+
+  let ppmm f mm = Format.pp_print_string f (snd (M.mon_to_string (M.from_string_c "1", mm)))
+
   let pp f p = Format.pp_print_string f (to_string p)
 
 (*  let add_mon (Coef c1, m) (Sum a) =

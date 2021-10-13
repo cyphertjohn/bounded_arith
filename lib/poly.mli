@@ -1,10 +1,9 @@
-(** A functor for manipulating polynomials whose coeficients functions are given as input. *)
-module Make :
-  functor (C : Sigs.Coefficient) ->
-  sig
+module type Polynomial = sig
   type monic_mon
 
-  type mon = C.coef * monic_mon
+  type coef
+
+  type mon = coef * monic_mon
 
   type poly
 
@@ -60,10 +59,23 @@ module Make :
   val get_vars : poly -> string list
 
   (** Initialize a polynomial from a constant *)
-  val from_const : C.coef -> poly
+  val from_const : coef -> poly
+end
 
-  val pp : Format.formatter -> poly -> unit [@@ocaml.toplevel_printer]
+(** A functor for manipulating polynomials whose coeficients functions are given as input. *)
+module Make :
+  functor (C : Sigs.Coefficient) -> Polynomial with type coef = C.coef
 
+
+module PQ : 
+  sig 
+    include (Polynomial with type coef = Sigs.Q.coef)
+
+    val pp : Format.formatter -> poly -> unit [@@ocaml.toplevel_printer]
+
+    val ppm : Format.formatter -> mon -> unit [@@ocaml.toplevel_printer]
+
+    val ppmm : Format.formatter -> monic_mon -> unit [@@ocaml.toplevel_printer]
   end
 
 (** An ideal of polynomial generators p_1, ..., p_n, is the set of polynomials f such that f = a_1p_1 + ... + a_np_n
@@ -90,30 +102,43 @@ module Ideal :
 
   end
 
-(** A (linear) cone consists of an ideal, representing equations, and all positive linear combinations of a set of inequalities.
-    Thus, each polynomial in the cone represents a positive polynomial. *)
-module Cone :
-  functor (C : Sigs.Coefficient) -> 
-  sig
-
-    (** A (linear) cone consists of an ideal, representing equations, and all positive linear combinations of a set of inequalities.
+module type Cone = sig 
+  (** A (linear) cone consists of an ideal, representing equations, and all positive linear combinations of a set of inequalities.
     Thus, each polynomial in the cone represents a positive polynomial. *)
     type cone
 
+    type poly
+
+    type monic_mon
+
     (** An empty cone <0> intialized with a monomial order. *)
-    val initialize : ?sat:int -> (Make(C).monic_mon -> Make(C).monic_mon -> int) -> cone
+    val initialize : ?sat:int -> (monic_mon -> monic_mon -> int) -> cone
 
     (** Add equations to the cone. *)
-    val add_eqs : Make(C).poly list -> cone -> cone
+    val add_eqs : poly list -> cone -> cone
 
     (** Add inequalities to the cone. *)
-    val add_ineqs : Make(C).poly list -> cone -> cone
+    val add_ineqs : poly list -> cone -> cone
 
     (** Reduce a polynomial by a cone. That is [reduce p i], returns r, i', such that p = f + r, 
     with the leading term of r minimum in the monomial order. If the inequalities, q_i in the cone were assumed to be
     non-negative, then f is also non-negative. Therefore, p >= r. If the inequalities were assumed to be non-positive then p <= r.*)
-    val reduce : Make(C).poly -> cone -> Make(C).poly * cone
+    val reduce : poly -> cone -> poly * cone
 
     (** Reduce a polynomial by a cone only using the equations of the cone. *)
-    val reduce_eq : Make(C).poly -> cone -> Make(C).poly * cone
-  end
+    val reduce_eq : poly -> cone -> poly * cone
+end
+
+
+(** A (linear) cone consists of an ideal, representing equations, and all positive linear combinations of a set of inequalities.
+    Thus, each polynomial in the cone represents a positive polynomial. *)
+module Cone :
+  functor (C : Sigs.Coefficient) -> Cone
+
+module ConeQ : sig
+
+  include (Cone with type poly := PQ.poly and type monic_mon := PQ.monic_mon )
+
+  val ppc : Format.formatter -> cone -> unit [@@ocaml.toplevel_printer]
+
+end
