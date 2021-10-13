@@ -277,7 +277,7 @@ module Cone(C : Sigs.Coefficient) = struct
       let dim_map, p_ineq = polys_to_dim (p :: neg_ineqs) in
       let p_dim = List.hd p_ineq in
       let ineq_dim = List.tl p_ineq in
-      let lambdas = List.map Lp.Poly.neg (Array.to_list (Lp.Poly.range ~lb:0. ~start:0 (List.length ineq_dim) "lambda")) in
+      let lambdas = Array.to_list (Lp.Poly.range ~lb:Float.neg_infinity ~ub:0. ~start:0 (List.length ineq_dim) "lambda") in
       let ineq_dim_lambda = List.map2 (fun lambda ineq -> lambda, ineq) lambdas ineq_dim in
       (*let add_pos_mult i ineq = 
         Lp.Poly.of_var (Lp.Var.make ~ub:0. ("lambda" ^ (string_of_int i))), ineq
@@ -291,7 +291,7 @@ module Cone(C : Sigs.Coefficient) = struct
           with Not_found -> sum
           in
         let sum = List.fold_left generate_lhs_sum (Lp.Poly.zero) ineq_dim_lambda in
-        let r = Lp.Poly.of_var (Lp.Var.make ("r" ^ (string_of_int dim))) in
+        let r = Lp.Poly.var ~lb:Float.neg_infinity ("r" ^ (string_of_int dim)) in
         let p_coef = 
           try Lp.Poly.c (M.to_float (DimMap.find dim p_dim))
           with Not_found -> Lp.Poly.zero
