@@ -137,6 +137,9 @@ module MakeMon (C : Sigs.Coefficient) = struct
     else if is_one norm_c then is_neg, (monic_mon_to_string (Prod m))
     else is_neg, (to_string_c norm_c) ^ (monic_mon_to_string (Prod m)) 
   
+  let is_const (_, Prod m) = 
+    if List.length m > 0 then false
+    else true
 end
 
 
@@ -157,6 +160,7 @@ module MakeP (M : sig
               val degree : string -> monic_mon -> int
               val get_vars : monic_mon -> string list
               val mon_to_string : mon -> bool * string
+              val is_const : mon -> bool
             end ) = struct
 
   let set_ord order = M.ord := order
@@ -218,6 +222,8 @@ module MakeP (M : sig
 
   let is_zero p = 
     M.is_zero (lt p)
+
+  let is_const p = M.is_const (lt p)
 
   (*let lm poly = M.get_monic_mon (lt poly)*)
 

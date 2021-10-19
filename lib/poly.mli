@@ -88,17 +88,15 @@ module Ideal :
     for polynomials a_1, ..., a_n *)
     type ideal
 
-    (** An empty ideal (<0>) initialized with a monomial order.*)
-    val initialize : (Make(C).monic_mon -> Make(C).monic_mon -> int) -> ideal
+    (** Initialize an ideal with a given monomial order and set of generators.*)
+    val make_ideal : (Make(C).monic_mon -> Make(C).monic_mon -> int) -> Make(C).poly list -> ideal
 
-    (** Add polynomials to the ideal. *)    
-    val add_polys : Make(C).poly list -> ideal -> ideal
+    (** Reduce a polynomial by an ideal. That is [reduce p i], returns r, such that p = f + r, 
+    with r minimum in the monomial order with f in the ideal.*)
+    val reduce : Make(C).poly -> ideal -> Make(C).poly
 
-    (** Reduce a polynomial by an ideal. That is [reduce p i], returns r, i', such that p = f + r, 
-    with r minimum in the monomial order. [reduce] also returns [i] as [i'] which represents the same ideal,
-    but could be represented differently internally. I.e. reduce will compute a grobner basis if one hasn't
-    already been computed.*)
-    val reduce : Make(C).poly -> ideal -> Make(C).poly * ideal
+    (** Get the generators (Grobner basis) of an ideal. *)
+    val get_generators : ideal -> Make(C).poly list
 
   end
 
@@ -111,22 +109,22 @@ module type Cone = sig
 
     type monic_mon
 
-    (** An empty cone <0> intialized with a monomial order. *)
-    val initialize : ?sat:int -> (monic_mon -> monic_mon -> int) -> cone
+    (** [make_cone sat ord eq ineqs] creates a linear cone from a given monomial order [ord], a list of equations [eq], and a list of ineqs [ineqs] (assumed to be nonnegative). 
+    The optional [sat] parameter will mutliply inequalities together up to the [sat] limit. Default is 1.*)
+    val make_cone : ?sat:int -> (monic_mon -> monic_mon -> int) -> poly list -> poly list -> cone
 
-    (** Add equations to the cone. *)
-    val add_eqs : poly list -> cone -> cone
-
-    (** Add inequalities to the cone. *)
-    val add_ineqs : poly list -> cone -> cone
-
-    (** Reduce a polynomial by a cone. That is [reduce p i], returns r, i', such that p = f + r, 
-    with the leading term of r minimum in the monomial order. If the inequalities, q_i in the cone were assumed to be
-    non-negative, then f is also non-negative. Therefore, p >= r. If the inequalities were assumed to be non-positive then p <= r.*)
-    val reduce : poly -> cone -> poly * cone
+    (** Reduce a polynomial by a cone. That is [reduce p i], returns r, such that p = -f + r, 
+    with the leading term of r minimum in the monomial order and f in the cone. Since f is a member of the cone it is nonnegative, so p <= r.*)
+    val reduce : poly -> cone -> poly
 
     (** Reduce a polynomial by a cone only using the equations of the cone. *)
-    val reduce_eq : poly -> cone -> poly * cone
+    val reduce_eq : poly -> cone -> poly
+
+    (**Get the basis polynomials for the ideal part of the cone. *)
+    val get_eq_basis : cone -> poly list
+
+    (** Get the inequalities of the cone. *)
+    val get_ineq_basis : cone -> poly list
 end
 
 

@@ -44,6 +44,11 @@ let log_polys ps =
   Log.log_line ~level:`debug (String.concat "\n" (List.map P.to_string ps));
   Log.log_line ~level:`debug ""
 
+let log_ineqs ps = 
+  Log.log_line ~level:`debug ("Curr Ineqs");
+  Log.log_line ~level:`debug (String.concat "\n" (List.map P.to_string ps));
+  Log.log_line ~level:`debug ""
+
 let log_top_order top = 
   Log.log_line ~level:`trace ("Top order");
   Log.log_line ~level:`trace ("[ " ^ (String.concat ";" (List.map (fun (i, v) -> "(" ^ (string_of_int i) ^ ", " ^ v ^ ")") top)) ^ "]\n");
@@ -255,48 +260,47 @@ let unpurify polys term_map =
   let poly_to_expr poly = Add (List.map mon_to_expr (P.get_mons poly)) in
   List.map (fun p -> Expr.simplify (poly_to_expr p)) polys, top_order
 
-let update_map id term_map polys t_p = 
-  let reduce v term (cone, acc_map) =
+let update_map cone term_map t_p eqs ineqs = 
+  let reduce v term acc_map =
     match term with
     | Floo p -> 
-      let red, new_cone = C.reduce_eq p cone in
-      new_cone, S.add v (Floo red) acc_map
+      S.add v (Floo (C.reduce_eq p cone)) acc_map
     | Recip p ->
-      let red, new_cone = C.reduce_eq p cone in
-      new_cone, S.add v (Recip red) acc_map
+      S.add v (Recip (C.reduce_eq p cone)) acc_map
   in
-  let cone, reduced_map = S.fold reduce term_map (id, S.empty) in
+  let reduced_map = S.fold reduce term_map S.empty in
   let bindings = fst (List.split (S.bindings reduced_map)) in
   let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
   let pairs = get_pairs bindings in
-  let rec aux rm_pairs (old_polys, old_tp, old_map, old_cone) =
+  let rec aux rm_pairs (old_eqs, old_ineqs, old_tp, old_map) =
     match rm_pairs with
-    | [] -> (old_polys, old_tp, old_map)
+    | [] -> (old_eqs, old_ineqs, old_tp, old_map)
     | (x_i, x_j) :: l ->
       match (S.find_opt x_i old_map, S.find_opt x_j old_map) with
       | Some (Recip t_i), Some (Recip t_j) | Some (Floo t_i), Some (Floo t_j) -> 
-        let remove_var_sub rem sub polys t_prime map =
+        let remove_var_sub rem sub equa ine t_prime map =
           let rem_map = S.remove rem map in
           let sub_poly = P.from_var sub in
           let new_map = S.map (sub_fun_app_var rem sub_poly) rem_map in
-          let new_polys = List.map (P.substitute (rem, sub_poly)) polys in
+          let new_eqs = List.map (P.substitute (rem, sub_poly)) equa in
+          let new_ineqs = List.map (P.substitute (rem, sub_poly)) ine in
           let new_t_prime = P.substitute (rem, sub_poly) t_prime in
-          (new_polys, new_t_prime, new_map)
+          (new_eqs, new_ineqs, new_t_prime, new_map)
         in
         if (P.compare t_i t_j) = 0 then 
-          let (new_p, new_t, new_map) = remove_var_sub x_i x_j old_polys old_tp old_map in
-          aux l (new_p, new_t, new_map, old_cone) (*Potentially cheaper equality check*)
+          let (new_eqs, new_ineqs, new_t, new_map) = remove_var_sub x_i x_j old_eqs old_ineqs old_tp old_map in
+          aux l (new_eqs, new_ineqs, new_t, new_map) (*Potentially cheaper equality check*)
         else
           let subtract_poly = P.add t_i (P.negate t_j) in
-          let sub_rem, new_cone = C.reduce_eq subtract_poly old_cone in
+          let sub_rem = C.reduce_eq subtract_poly cone in
           if P.is_zero sub_rem then 
-            let (new_p, new_t, new_map) = remove_var_sub x_i x_j old_polys old_tp old_map in
-            aux l (new_p, new_t, new_map, new_cone) (*Potentially cheaper equality check*)
-          else aux l (old_polys, old_tp, old_map, new_cone)
-      | _ -> aux l (old_polys, old_tp, old_map, old_cone)
+            let (new_eqs, new_ineqs, new_t, new_map) = remove_var_sub x_i x_j old_eqs old_ineqs old_tp old_map in
+            aux l (new_eqs, new_ineqs, new_t, new_map)
+          else aux l (old_eqs, old_ineqs, old_tp, old_map)
+      | _ -> aux l (old_eqs, old_ineqs, old_tp, old_map)
   in
-  let red_t, new_cone = C.reduce t_p cone in
-  aux pairs (polys, red_t, reduced_map, new_cone)
+  let red_t = C.reduce t_p cone in
+  aux pairs (eqs, ineqs, red_t, reduced_map)
 
 let equal_t_map a b = 
   let a_keys = fst (List.split (S.bindings a)) in
@@ -338,28 +342,29 @@ let rewrite eqs ineqs vars_to_keep t =
     else if List.mem v vars_to_keep then S.add v true acc
     else S.add v false acc
   in
-  let iteration t_map tp equat ineq =
+  let iteration t_map tp equatio ineq =
     log_term_map t_map;
     log_t tp;
-    log_polys equat;
+    log_polys equatio;
+    log_ineqs ineq;
     let deg_map, top_order = calc_deg_map t_map in
     log_top_order top_order;
     (*let tvars = term_vars term_map in*)
-    let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equat @ ineqs))) in
+    let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equatio @ ineq))) in
     log_keep_map keep_map;
     (*P.set_ord (fun a b -> Log.log_time_cum "Monomial order" ((effective_deg_ord deg_map keep_map) a) b);*)
-    let new_cone = C.add_ineqs ineq (C.add_eqs equat (C.initialize ~sat:3 (effective_deg_ord deg_map keep_map pure_vars top_order))) in
-    update_map new_cone t_map equat tp 
+    let new_cone = C.make_cone ~sat:3 (effective_deg_ord deg_map keep_map pure_vars top_order) equatio ineq in
+    update_map new_cone t_map tp (C.get_eq_basis new_cone) (C.get_ineq_basis new_cone)
   in
   let rec loop old_map t_map tp equations inequalities =
     if equal_t_map old_map t_map then 
       let unpure_t, _ = unpurify [tp] t_map in
       List.hd (unpure_t)
     else
-      let (new_eqs, new_t, new_map) = iteration t_map tp equations inequalities in
-      loop t_map new_map new_t new_eqs inequalities
+      let (new_eqs, new_ineqs, new_t, new_map) = iteration t_map tp equations inequalities in
+      loop t_map new_map new_t new_eqs new_ineqs
   in
-  let new_eqs, new_t, new_map = iteration term_map t_p eqs ineqs in
-  loop term_map new_map new_t new_eqs ineqs
+  let (new_eqs, new_ineqs, new_t, new_map) = iteration term_map t_p eqs ineqs in
+  loop term_map new_map new_t new_eqs new_ineqs
 
   
