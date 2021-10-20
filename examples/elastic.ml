@@ -17,7 +17,7 @@ let tupper = Bound.EqRewriter.rewrite [t1;t2;t3]
 									  	from_string "e";
 									  	from_string "b"; *)
 									  	from_string "1/(e + a)";
-									  	from_string "b e / v - floor(b e / v)"
+									  	from_string "b v / e - floor(b v / e)"
 									  ] 
 									  vars_to_keep 
 									  (from_string "floor(x) - floor(y)")
