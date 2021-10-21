@@ -6,6 +6,7 @@ let t3 = from_string "y - v z/(e+a)"
 
 let vars_to_keep = ["v"; "a"; "e"; "b";]
 
+(* 118.584673s *)
 let tupper = Bound.EqRewriter.rewrite [t1;t2;t3] 
 									  [
 									  	from_string "floor(x - y) - (floor(x) - floor(y))";
@@ -18,6 +19,40 @@ let tupper = Bound.EqRewriter.rewrite [t1;t2;t3]
 									  	from_string "b"; *)
 									  	from_string "1/(e + a)";
 									  	from_string "b v / e - floor(b v / e)"
+									  ] 
+									  vars_to_keep 
+									  (from_string "floor(x) - floor(y)")
+
+(* 90.878673s *)
+let tupper = Bound.EqRewriter.rewrite [t1;t2;t3] 
+									  [
+									  	(* from_string "floor(x - y) - (floor(x) - floor(y))"; *)
+									  	from_string "x - floor(x)"; (* from_string "y - floor(y)"; *)
+									  	(* from_string "floor(x) + 1 - x"; *) from_string "floor(y) + 1 - y";
+									  	(* from_string "(a b / e) - floor(a b / e)";  *) from_string "floor(a b / e) + 1 - (a b / e)";
+									  	from_string "v";
+									  	(* from_string "a";
+									  	from_string "e";
+									  	from_string "b"; *)
+									  	from_string "1/(e + a)";
+									  	from_string "b v / e - floor(b v / e)"
+									  ] 
+									  vars_to_keep 
+									  (from_string "floor(x) - floor(y)")
+
+(* 79.571205s *)
+let tupper = Bound.EqRewriter.rewrite [t1;t2;t3] 
+									  [
+									  	(* from_string "floor(x - y) - (floor(x) - floor(y))"; *)
+									  	from_string "x - floor(x)"; (* from_string "y - floor(y)"; *)
+									  	(* from_string "floor(x) + 1 - x"; *) from_string "floor(y) + 1 - y";
+									  	(* from_string "(a b / e) - floor(a b / e)";  *) from_string "floor(a b / e) + 1 - (a b / e)";
+									  	from_string "v";
+									  	(* from_string "a";
+									  	from_string "e";
+									  	from_string "b"; *)
+									  	from_string "1/(e + a)";
+									  	(* from_string "b v / e - floor(b v / e)" *)
 									  ] 
 									  vars_to_keep 
 									  (from_string "floor(x) - floor(y)")
