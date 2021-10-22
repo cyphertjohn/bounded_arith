@@ -323,7 +323,7 @@ let equal_t_map a b =
   
 (** Compute an upper bound for t over the variables in vars_to_keep,
     provided the equalities tx = 0 for all tx in terms. *)
-let rewrite eqs ineqs vars_to_keep t = 
+let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t = 
   let fold_eqs (old_eqs, old_tmap, old_pure_vars) term =
     let (eq, derived_eqs, tmap, pure_vars) = purify term in
     (eq :: old_eqs @ derived_eqs, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap, VS.union old_pure_vars pure_vars)
@@ -353,7 +353,7 @@ let rewrite eqs ineqs vars_to_keep t =
     let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equatio @ ineq))) in
     log_keep_map keep_map;
     (*P.set_ord (fun a b -> Log.log_time_cum "Monomial order" ((effective_deg_ord deg_map keep_map) a) b);*)
-    let new_cone = C.make_cone ~sat:3 (effective_deg_ord deg_map keep_map pure_vars top_order) equatio ineq in
+    let new_cone = C.make_cone ~sat:sat (effective_deg_ord deg_map keep_map pure_vars top_order) equatio ineq in
     update_map new_cone t_map tp (C.get_eq_basis new_cone) (C.get_ineq_basis new_cone)
   in
   let rec loop old_map t_map tp equations inequalities =

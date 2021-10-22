@@ -91,6 +91,9 @@ module Ideal :
     (** Initialize an ideal with a given monomial order and set of generators.*)
     val make_ideal : (Make(C).monic_mon -> Make(C).monic_mon -> int) -> Make(C).poly list -> ideal
 
+    (** Test whether a polynomial is a member of the ideal. *)
+    val mem : Make(C).poly -> ideal -> bool
+
     (** Reduce a polynomial by an ideal. That is [reduce p i], returns r, such that p = f + r, 
     with r minimum in the monomial order with f in the ideal.*)
     val reduce : Make(C).poly -> ideal -> Make(C).poly
@@ -112,6 +115,9 @@ module type Cone = sig
     (** [make_cone sat ord eq ineqs] creates a linear cone from a given monomial order [ord], a list of equations [eq], and a list of ineqs [ineqs] (assumed to be nonnegative). 
     The optional [sat] parameter will mutliply inequalities together up to the [sat] limit. Default is 1.*)
     val make_cone : ?sat:int -> (monic_mon -> monic_mon -> int) -> poly list -> poly list -> cone
+
+    (** Tests whether it is implied that the first argument is non-negative assuming the equations and inequalities given by the cone. *)
+    val is_non_neg : poly -> cone -> bool
 
     (** Reduce a polynomial by a cone. That is [reduce p i], returns r, such that p = -f + r, 
     with the leading term of r minimum in the monomial order and f in the cone. Since f is a member of the cone it is nonnegative, so p <= r.*)

@@ -71,7 +71,10 @@ module Ideal (C : Sigs.Coefficient) = struct
 
   include Make(C)
 
-  type ideal = poly list
+  type ideal = 
+    | Top (*<1>*)
+    | Bot (*<0>*)
+    | I of poly list (*<p1,...,pn>*)
 
 
   let division divisors f =
@@ -153,7 +156,7 @@ module Ideal (C : Sigs.Coefficient) = struct
         foo 0
       in
       match worklist with
-      | [] -> minimize g
+      | [] -> I (minimize g)
       | (i, j) :: rest ->
         let (fi, fj) = (List.nth fss i, List.nth fss j) in
         (*Log.log_line ~level:`trace "Beginning Grobner iteration";
@@ -175,32 +178,56 @@ module Ideal (C : Sigs.Coefficient) = struct
           Log.log_line ~level:`trace ("After reduction: " ^ (to_string_n s));*)
           (*print_endline (to_string s);*)
           if is_zero s then aux rest g fss
+          else if is_const s then Top
           else 
             aux (worklist @ (List.mapi (fun i _ -> (i, t+1)) fss)) (s :: g) (fss @ [s])
             (*aux (worklist @ (List.mapi (fun i _ -> (i, t+1)) fss)) (minimize (s :: g)) (fss @ [s])*)
             (*aux (worklist @ (List.mapi (fun i _ -> (i, t+1)) fss)) (List.rev (List.sort compare_n (minimize (s :: g)))) (fss @ [s])*) (*check this sorting *)
         )
     in
-    let norm_fs = List.rev (List.sort compare (List.filter (fun p -> not (is_zero p)) fs)) in
+    let norm_fs = List.rev (List.sort compare fs) in
     let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
     let norm_g = aux (get_pairs (List.mapi (fun i _ -> i) norm_fs)) norm_fs norm_fs in
     norm_g
 
 
 
-  let reduce p (basis : ideal) : poly = 
-    if List.length basis = 0 then (normalize p)
-    else (snd (division basis (normalize p)))
+  let reduce p (i : ideal) : poly = 
+    match i with
+    | Top -> from_const_s "0"
+    | Bot -> p
+    | I basis -> snd (division basis (normalize p))
 
 
-  let ppi f (basis : ideal) = 
-    Format.pp_print_string f ("Grobner Basis: <" ^ (String.concat ", " (List.map to_string basis)) ^ ">")
+  let ppi f (i : ideal) = 
+    let str =
+      match i with
+      | Top -> "<1>"
+      | Bot -> "<0>"
+      | I basis -> "<" ^ (String.concat ", " (List.map to_string basis)) ^ ">"
+    in
+    Format.pp_print_string f str
 
   let make_ideal order eqs : ideal = 
     set_ord order; 
-    improved_buchberger (List.map normalize eqs)
+    if List.length eqs = 0 then Bot
+    else 
+      let normal = List.filter (fun p -> not (is_zero p)) (List.map normalize eqs) in
+      if List.length normal = 0 || List.for_all is_zero normal then Bot
+      else if List.exists is_const normal then Top
+      else improved_buchberger normal
 
-  let get_generators (basis : ideal) : poly list = basis
+  let mem p i =
+    match i with
+    | Top -> true
+    | Bot -> false
+    | I _ -> is_zero (reduce p i)
+
+  let get_generators (i : ideal) : poly list = 
+    match i with
+    | Top -> [from_const_s "1"]
+    | Bot -> [from_const_s "0"]
+    | I basis -> basis
 
 end
 
@@ -212,6 +239,8 @@ module type Cone = sig
     type monic_mon
 
     val make_cone : ?sat:int -> (monic_mon -> monic_mon -> int) -> poly list -> poly list -> cone
+
+    val is_non_neg : poly -> cone -> bool
 
     val reduce : poly -> cone -> poly
 
@@ -227,51 +256,84 @@ module Cone(C : Sigs.Coefficient) = struct
   module I = Ideal(C)
   include I
   
-  type cone = int * I.ideal * poly list * poly list
+  (*type impl = Imp of poly * poly
+
+  let (=>) p q = Imp (p, q)
+
+  type conein = {
+    ord : monic_mon -> monic_mon -> int;
+    eqs : poly list;
+    ineqs : poly list;
+    impls : impl list
+  }
+
+  type cone = 
+    {
+      ideal : I.ideal;
+      ineqs : poly list;
+      derived_ineqs: poly list
+    }*)
+
+  type cone = int * I.ideal * (poly list) list
+
+  let is_not_neg_const p = 
+    if I.is_const p then
+      let c = fst (List.hd (I.get_mons p)) in
+      if I.M.cmp c (I.M.from_string_c "0") >= 0 then true
+      else false
+    else false
 
   let make_cone ?(sat = 1) order eqs ineqs : cone = 
     let ideal = make_ideal order eqs in
     let minimize_ineqs ins = 
       let reduced_ineqs = List.map (fun i -> I.reduce i ideal) ins in
-      let is_not_const p = 
-        if I.is_const p then
-          let c = fst (List.hd (I.get_mons p)) in
-          if I.M.cmp c (I.M.from_string_c "0") < 0 then failwith "inconsistent cone"
-          else false
-        else true
-      in
-      let no_const = List.filter is_not_const reduced_ineqs in
-      let sorted_ineqs  = List.sort I.compare no_const in
-      let folder (acc, prev) curr = 
-        if I.compare prev curr = 0 then (acc, prev)
-        else (prev :: acc, curr)
-      in
+      let no_const = List.filter (fun p -> not (is_not_neg_const p)) reduced_ineqs in
+      no_const
+    in
+    let saturate l depth = 
+      let rec aux1 l1 d =
+         if d <= 1 then
+           match l1 with
+           | [] -> []
+           | x :: xs ->
+             [x] :: (aux1 xs d)
+         else 
+           match l1 with 
+           | [] -> []
+           | x :: [] -> 
+             let prev = aux1 l1 (d - 1) in
+             (List.map (fun e -> mul x e) (List.hd prev)) :: prev
+           | x :: xs ->
+               let prev = aux1 xs d in 
+               let rec aux2 dyn = 
+                 match dyn with
+                 | [] -> []
+                 | my_level :: rest ->
+                   let new_dyn = aux2 rest in
+                   if List.length new_dyn = 0 then [x :: my_level]
+                   else
+                     let prev_level = List.hd new_dyn in
+                     let new_level = (List.map (fun e -> mul x e) prev_level) @ my_level in
+                     new_level :: new_dyn
+               in
+               aux2 prev
+        in
+      aux1 l depth
+    in
+    let min_ineqs = minimize_ineqs (List.map normalize ineqs) in
+    let sorted_ineqs  = List.sort I.compare min_ineqs in
+    let folder (acc, prev) curr = 
+      if I.compare prev curr = 0 then (acc, prev)
+      else (prev :: acc, curr)
+    in
+    let ineqs = 
       if List.length sorted_ineqs = 0 then []
       else  
         let (acc, last) = List.fold_left folder ([], List.hd sorted_ineqs) (List.tl sorted_ineqs) in
         List.rev (last :: acc)
     in
-    let saturate ine depth =
-      let increase_level level = 
-        fst (List.fold_left 
-          (fun (a, r) p -> 
-            a @ (List.map (fun x -> mul p x) r), List.tl r
-          )
-          ([], level) ine)
-      in
-      let rec aux (acc, prev_level) level = 
-        if level <= 1 then acc @ prev_level
-        else 
-          aux (acc @ prev_level, increase_level prev_level) (level - 1)
-      in
-      if depth <= 1 then []
-      else
-        let second_level = increase_level ine in
-        aux ([], second_level) (depth - 1)
-    in
-    let min_ineqs = minimize_ineqs (List.map normalize ineqs) in
-    let derived_ineqs = minimize_ineqs (saturate min_ineqs sat) in
-    (sat, ideal, min_ineqs, derived_ineqs)
+    let derived_ineqs = List.map minimize_ineqs (saturate ineqs sat) in
+    (sat, ideal, (List.rev derived_ineqs))
 
 
   module MonMap = BatMap.Make(struct type t = monic_mon let compare a b = mon_order (M.from_string_c "1", a) (M.from_string_c "1", b) end)
@@ -305,12 +367,49 @@ module Cone(C : Sigs.Coefficient) = struct
     in
     dim_map, List.map poly_to_coef_map polys
     
-      
+    
+
+  let is_non_neg p ((_, id, ineqs) : cone) = 
+    let p_ired = I.reduce p id in
+    if is_not_neg_const p_ired then true
+    else
+      let ineqs = List.concat ineqs in
+      let dim_map, p_ineq = polys_to_dim (p_ired :: ineqs) in
+      let p_dim = List.hd p_ineq in
+      let ineq_dim = List.tl p_ineq in
+      let lambdas = Array.to_list (Lp.Poly.range ~lb:0. ~start:0 (List.length ineq_dim) "lambda") in
+      let ineq_dim_lambda = List.map2 (fun lambda ineq -> lambda, ineq) lambdas ineq_dim in
+      let generate_cnstrs dim m cnsts = 
+        let generate_lhs_sum sum (lambda, ineq) = 
+          try 
+            let dim_c = DimMap.find dim ineq in
+            Lp.Poly.(++) sum (Lp.Poly.expand (Lp.Poly.c (M.to_float dim_c)) lambda)
+          with Not_found -> sum
+          in
+        let sum = List.fold_left generate_lhs_sum (Lp.Poly.zero) ineq_dim_lambda in
+        let p_coef = 
+          try Lp.Poly.c (M.to_float (DimMap.find dim p_dim))
+          with Not_found -> Lp.Poly.zero
+        in
+        if I.M.is_const (I.M.from_string_c "0", m) then
+          let r = Lp.Poly.var ~lb:0. "r" in
+          let new_cnst = Lp.Cnstr.eq (Lp.Poly.(++) sum r) p_coef in
+          new_cnst :: cnsts
+        else
+          let new_cnst = Lp.Cnstr.eq sum p_coef in
+          new_cnst :: cnsts
+      in
+    let cnstrs = DimMap.fold generate_cnstrs dim_map [] in
+    let prob = Lp.Problem.make (Lp.Objective.minimize Lp.Poly.zero) cnstrs in
+    Log.log_line ~level:`trace (Lp.Problem.to_string ~short:true prob);
+    match Lp_glpk.solve ~term_output:false prob with
+    | Ok _ -> true
+    | Error _ -> false
+
   let reduce_ineq p ineqs = 
     if List.length ineqs = 0 then p
     else 
-      let neg_ineqs = ineqs (*List.map negate ineqs*) in
-      let dim_map, p_ineq = polys_to_dim (p :: neg_ineqs) in
+      let dim_map, p_ineq = polys_to_dim (p :: ineqs) in
       let p_dim = List.hd p_ineq in
       let ineq_dim = List.tl p_ineq in
       let lambdas = Array.to_list (Lp.Poly.range ~lb:Float.neg_infinity ~ub:0. ~start:0 (List.length ineq_dim) "lambda") in
@@ -357,17 +456,17 @@ module Cone(C : Sigs.Coefficient) = struct
       in
       from_mons (find_optimal_sol r_cnsts)
         
-  let reduce_eq p ((_, id, _, _) : cone) = I.reduce p id
+  let reduce_eq p ((_, id, _) : cone) = I.reduce p id
 
-  let reduce p ((_, ide, ineqs, derived_ineqs) : cone) = 
+  let reduce p ((_, ide, ineqs) : cone) = 
     let p_ired = I.reduce p ide in
-    let p_ineq_red = reduce_ineq p_ired (ineqs @ derived_ineqs) in
+    let p_ineq_red = reduce_ineq p_ired (List.concat ineqs) in
     p_ineq_red
     
 
-  let get_eq_basis ((_, ide, _, _) : cone) = I.get_generators ide
+  let get_eq_basis ((_, ide, _) : cone) = I.get_generators ide
 
-  let get_ineq_basis ((_, _, ineqs, _) : cone) = ineqs
+  let get_ineq_basis ((_, _, ineqs) : cone) = List.hd ineqs
 
 end
 
@@ -375,10 +474,10 @@ module ConeQ =
   struct
     include Cone(Sigs.Q)
     
-    let ppc f ((_, i, ineqs, derived_ineqs) : cone) = 
+    let ppc f ((_, i, ineqs) : cone) = 
     ppi f i;
-    let str = "Basis Ineqs: [" ^ (String.concat ", " (List.map to_string ineqs)) ^ "]" in
-    let str = str ^ "\nDerived Ineqs: [" ^ (String.concat ", " (List.map to_string derived_ineqs)) ^ "]" in
+    let str = "Basis Ineqs: [" ^ (String.concat ", " (List.map to_string (List.hd ineqs))) ^ "]" in
+    let str = str ^ "\nDerived Ineqs: [" ^ (String.concat ", " (List.map to_string (List.concat (List.tl ineqs)))) ^ "]" in
     Format.pp_print_string f str
 
   end
