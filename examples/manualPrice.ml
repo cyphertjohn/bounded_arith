@@ -1,52 +1,62 @@
 open Bound.Expr
 
-(* timeRange = endTime - startTime *)
-(* priceRange = startPrice - minimumPrice *)
-let t0 = from_string "minimumPrice + priceRange - startPrice"
+let t1 = from_string "floor((startPrice - minimumPrice) / (endTime - startTime)) - drop"
+let t2 = from_string "(t1 - startTime) drop - diff1"
+let t3 = from_string "startPrice - diff1 - price1"
 
-(* priceRange = startPrice - minimumPrice *)
-let t1 = from_string "floor((priceRange) / (startTime + timeRange)) - drop"
-(* t1diff = t1 - startTime *)
-let t2 = from_string "t1diff drop - diff1"
-let t3 = from_string "minimumPrice + priceRange - diff1 - price1"
+let vars_to_keep = ["minimumPrice"; "startPrice"; "startTime"; "endTime"; "t1"]
 
-let vars_to_keep = ["minimumPrice"; "priceRange"; "startTime"; "timeRange"; "t1diff"]
-
-let tupper = Bound.EqRewriter.rewrite [t0;t1;t2;t3] [] vars_to_keep (from_string "price1 - startPrice")
-let tupper_res = Bound.EqRewriter.rewrite [] [] vars_to_keep (Bound.IneqRewriter.rewrite tupper)
-
-(* utop # to_string tupper;;
-- : string = "-t1difffloor(priceRange(startTime + timeRange)^(-1))"
-which is negative. But
-utop # to_string tupper_res;;
-- : string = "t1diff - priceRanget1diff(startTime + timeRange)^(-1)"
-might not be. *)
-
-let tlower = Bound.EqRewriter.rewrite [t1;t2;t3] [] vars_to_keep (from_string "minimumPrice - price1")
-let tlower_res = Bound.EqRewriter.rewrite [] [] vars_to_keep (Bound.IneqRewriter.rewrite tlower)
-
+let tupper = Bound.EqRewriter.rewrite [t1;t2;t3] 
+									  [
+									  	from_string "startPrice - minimumPrice";
+									  	from_string "endTime - startTime";
+									  	from_string "t1 - startTime";
+									  	from_string "(startPrice - minimumPrice) / (endTime - startTime)"; (* division rule *)
+									  	from_string "floor((startPrice - minimumPrice) / (endTime - startTime))"; (* floor positivity rule (obtained from previous) *)
+									  ] 
+									  vars_to_keep 
+									  (from_string "price1")
 (* 
-utop # to_string tlower;;
-- : string =
-"-priceRange + t1difffloor(priceRange(startTime + timeRange)^(-1))"
-utop # to_string tlower_res;;
-- : string = "-priceRange + priceRanget1diff(startTime + timeRange)^(-1)"
-Negative only when t1diff <= timeRange! 
-(in which case t1diff(startTime + timeRange) < 1 and hence priceRange times this is less than priceRange)
+utop # to_string tupper;;
+- : string = "startPrice"
 *)
 
-let t0_2 = from_string "t1diff + telapsed - t2diff"
-let t2_2 = from_string "t2diff drop - diff2"
-let t3_2 = from_string "minimumPrice + priceRange - diff2 - price2"
+let tlower = Bound.EqRewriter.rewrite [t1;t2;t3] 
+									  [
+									  	from_string "startPrice - minimumPrice";
+									  	from_string "endTime - startTime";
+									  	from_string "t1 - startTime";
+									  	from_string "endTime - t1";
+									  	from_string "((startPrice - minimumPrice) / (endTime - startTime)) - floor((startPrice - minimumPrice) / (endTime - startTime))"; (* floor upper bound rule *)
+									  	from_string "(startPrice - minimumPrice) / (endTime - startTime)"; (* division rule *)
+									  ] 
+									  vars_to_keep 
+									  (from_string "-price1")
+(* 
+utop # to_string tlower;;
+- : string = "-minimumPrice"
+*)
+
+let t1_2 = from_string "floor((startPrice - minimumPrice) / (endTime - startTime)) - drop"
+let t2_2 = from_string "(t2 - startTime) drop - diff2"
+let t3_2 = from_string "startPrice - diff2 - price2"
 
 let vars_to_keep_2 = "telapsed" :: vars_to_keep
 
-let tmonotone = Bound.EqRewriter.rewrite [t0;t1;t2;t3;t0_2;t2_2;t3_2] [] vars_to_keep_2 (from_string "price2 - price1")
-let tmonotone_res = Bound.EqRewriter.rewrite [] [] vars_to_keep (Bound.IneqRewriter.rewrite tmonotone)
-(*
+let tmonotone = Bound.EqRewriter.rewrite [t1;t2;t3;t1_2;t2_2;t3_2;] 
+									  [
+									  	from_string "startPrice - minimumPrice";
+									  	from_string "endTime - startTime";
+									  	from_string "t1 - startTime";
+									  	from_string "t2 - t1";
+									  	from_string "endTime - t2";
+									  	from_string "(startPrice - minimumPrice) / (endTime - startTime)"; (* division rule *)
+									  	from_string "floor((startPrice - minimumPrice) / (endTime - startTime))"; (* floor positivity rule (obtained from previous) *)
+									  	from_string "floor((startPrice - minimumPrice) / (endTime - startTime)) + 1 - ((startPrice - minimumPrice) / (endTime - startTime))"; (* floor lower bound rule *)
+									  ] 
+									  vars_to_keep 
+									  (from_string "price2 - price1")
+(* 
 utop # to_string tmonotone;;
-- : string = "-telapsedfloor(priceRange(startTime + timeRange)^(-1))"
-utop # to_string tmonotone_res;;
-- : string = "telapsed - priceRangetelapsed(startTime + timeRange)^(-1)"
-Similar to the issue with tupper.
+- : string = "0" 
 *)
