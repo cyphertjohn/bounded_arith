@@ -43,6 +43,8 @@ module type Polynomial = sig
   val get_vars : poly -> string list
 
   val from_const : coef -> poly
+
+  val normalize : poly -> poly
 end
 
 module Make (C : Sigs.Coefficient) = struct
@@ -195,7 +197,7 @@ module Ideal (C : Sigs.Coefficient) = struct
   let reduce p (i : ideal) : poly = 
     match i with
     | Top -> from_const_s "0"
-    | Bot -> p
+    | Bot -> normalize p
     | I basis -> snd (division basis (normalize p))
 
 
@@ -238,7 +240,11 @@ module type Cone = sig
 
     type monic_mon
 
-    val make_cone : ?sat:int -> (monic_mon -> monic_mon -> int) -> poly list -> poly list -> cone
+    type impl = poly * poly
+
+    val (=>) : poly -> poly -> impl
+
+    val make_cone : ?sat:int -> ?ord:(monic_mon -> monic_mon -> int) -> ?eqs:poly list -> ?ineqs:poly list -> ?impls: impl list -> unit -> cone
 
     val is_non_neg : poly -> cone -> bool
 
@@ -256,25 +262,27 @@ module Cone(C : Sigs.Coefficient) = struct
   module I = Ideal(C)
   include I
   
-  (*type impl = Imp of poly * poly
+  type impl = poly * poly
 
-  let (=>) p q = Imp (p, q)
+  let (=>) p q : impl = (p, q)
 
+  (*
   type conein = {
     ord : monic_mon -> monic_mon -> int;
     eqs : poly list;
     ineqs : poly list;
     impls : impl list
   }
+  *)
 
   type cone = 
     {
+      depth : int;
       ideal : I.ideal;
-      ineqs : poly list;
-      derived_ineqs: poly list
-    }*)
+      ineqs : poly list list
+    }
 
-  type cone = int * I.ideal * (poly list) list
+  (*type cone = int * I.ideal * poly list list*)
 
   let is_not_neg_const p = 
     if I.is_const p then
@@ -283,57 +291,60 @@ module Cone(C : Sigs.Coefficient) = struct
       else false
     else false
 
-  let make_cone ?(sat = 1) order eqs ineqs : cone = 
-    let ideal = make_ideal order eqs in
-    let minimize_ineqs ins = 
-      let reduced_ineqs = List.map (fun i -> I.reduce i ideal) ins in
-      let no_const = List.filter (fun p -> not (is_not_neg_const p)) reduced_ineqs in
-      no_const
-    in
-    let saturate l depth = 
-      let rec aux1 l1 d =
-         if d <= 1 then
-           match l1 with
-           | [] -> []
-           | x :: xs ->
-             [x] :: (aux1 xs d)
-         else 
-           match l1 with 
-           | [] -> []
-           | x :: [] -> 
-             let prev = aux1 l1 (d - 1) in
-             (List.map (fun e -> mul x e) (List.hd prev)) :: prev
-           | x :: xs ->
-               let prev = aux1 xs d in 
-               let rec aux2 dyn = 
-                 match dyn with
-                 | [] -> []
-                 | my_level :: rest ->
-                   let new_dyn = aux2 rest in
-                   if List.length new_dyn = 0 then [x :: my_level]
-                   else
-                     let prev_level = List.hd new_dyn in
-                     let new_level = (List.map (fun e -> mul x e) prev_level) @ my_level in
-                     new_level :: new_dyn
-               in
-               aux2 prev
+  (*let saturate_prod l depth = 
+    let rec aux1 l1 d =
+      if d <= 1 then
+        match l1 with
+        | [] -> []
+        | x :: xs ->
+          [x] :: (aux1 xs d)
+      else 
+        match l1 with 
+        | [] -> []
+        | x :: [] -> 
+          let prev = aux1 l1 (d - 1) in
+          (List.map (fun e -> mul x e) (List.hd prev)) :: prev
+        | x :: xs ->
+          let prev = aux1 xs d in 
+          let rec aux2 dyn = 
+            match dyn with
+            | [] -> []
+            | my_level :: rest ->
+              let new_dyn = aux2 rest in
+              if List.length new_dyn = 0 then [x :: my_level]
+              else
+                let prev_level = List.hd new_dyn in
+                let new_level = (List.map (fun e -> mul x e) prev_level) @ my_level in
+                new_level :: new_dyn
+          in
+          aux2 prev
         in
-      aux1 l depth
+      List.rev (aux1 l depth)*)
+
+  (* This function doesn't check whether incoming ine is already a member of the linear cone. Could consider an alternative*)
+  let add_ineq c ine : cone = 
+    let minimize_ineqs ins = 
+      let reduced_ineqs = List.map (fun i -> I.reduce i c.ideal) ins in
+      List.filter (fun p -> not (is_not_neg_const p)) reduced_ineqs
     in
-    let min_ineqs = minimize_ineqs (List.map normalize ineqs) in
-    let sorted_ineqs  = List.sort I.compare min_ineqs in
-    let folder (acc, prev) curr = 
-      if I.compare prev curr = 0 then (acc, prev)
-      else (prev :: acc, curr)
-    in
-    let ineqs = 
-      if List.length sorted_ineqs = 0 then []
-      else  
-        let (acc, last) = List.fold_left folder ([], List.hd sorted_ineqs) (List.tl sorted_ineqs) in
-        List.rev (last :: acc)
-    in
-    let derived_ineqs = List.map minimize_ineqs (saturate ineqs sat) in
-    (sat, ideal, (List.rev derived_ineqs))
+    let ine_red = I.reduce ine c.ideal in
+    if is_not_neg_const ine_red then c
+    else if List.length c.ineqs = 0 then 
+      let rec aux acc depth = 
+        if depth <= 0 then acc
+        else 
+          aux ([I.exp_poly ine_red depth] :: acc) (depth - 1)
+      in
+      {depth = c.depth; ideal = c.ideal; ineqs= (List.map minimize_ineqs (aux [] c.depth))}
+    else 
+      let folder acc curr_level = 
+        if List.length acc = 0 then [ine_red :: curr_level]
+        else
+          let prev_level = List.hd acc in
+          ((List.map (fun p -> I.mul ine_red p) prev_level) @ curr_level) :: acc
+      in
+      let new_ineqs = List.map minimize_ineqs (List.rev (List.fold_left folder [] c.ineqs)) in
+      {depth = c.depth;ideal = c.ideal; ineqs= new_ineqs}
 
 
   module MonMap = BatMap.Make(struct type t = monic_mon let compare a b = mon_order (M.from_string_c "1", a) (M.from_string_c "1", b) end)
@@ -369,7 +380,8 @@ module Cone(C : Sigs.Coefficient) = struct
     
     
 
-  let is_non_neg p ((_, id, ineqs) : cone) = 
+  let is_non_neg p c = 
+    let id, ineqs = c.ideal, c.ineqs in
     let p_ired = I.reduce p id in
     if is_not_neg_const p_ired then true
     else
@@ -456,17 +468,36 @@ module Cone(C : Sigs.Coefficient) = struct
       in
       from_mons (find_optimal_sol r_cnsts)
         
-  let reduce_eq p ((_, id, _) : cone) = I.reduce p id
+  let reduce_eq p c = I.reduce p c.ideal
 
-  let reduce p ((_, ide, ineqs) : cone) = 
-    let p_ired = I.reduce p ide in
-    let p_ineq_red = reduce_ineq p_ired (List.concat ineqs) in
+  let reduce p c = 
+    let p_ired = I.reduce p c.ideal in
+    let p_ineq_red = reduce_ineq p_ired (List.concat c.ineqs) in
     p_ineq_red
     
 
-  let get_eq_basis ((_, ide, _) : cone) = I.get_generators ide
+  let get_eq_basis c = I.get_generators c.ideal
 
-  let get_ineq_basis ((_, _, ineqs) : cone) = List.hd ineqs
+  let get_ineq_basis c = 
+    if List.length c.ineqs = 0 then [I.from_const_s "0"]
+    else
+      List.hd c.ineqs
+
+  let saturate c impls = 
+    let rec aux curr_cone worklist tried = 
+      match worklist with
+      | [] -> curr_cone
+      | (imp, con) :: rest ->
+        if is_non_neg imp curr_cone then aux (add_ineq curr_cone con) (rest @ tried) []
+        else
+          aux curr_cone rest ((imp, con) :: tried)
+    in
+    aux c impls []
+
+  let make_cone ?(sat = 1) ?(ord = I.grlex_ord) ?(eqs = []) ?(ineqs = []) ?(impls = []) () = 
+    let ideal = make_ideal ord eqs in
+    let prod_sat_cone = List.fold_left add_ineq {depth=sat; ideal= ideal; ineqs= []} ineqs in
+    saturate prod_sat_cone impls
 
 end
 
@@ -474,10 +505,13 @@ module ConeQ =
   struct
     include Cone(Sigs.Q)
     
-    let ppc f ((_, i, ineqs) : cone) = 
-    ppi f i;
-    let str = "Basis Ineqs: [" ^ (String.concat ", " (List.map to_string (List.hd ineqs))) ^ "]" in
-    let str = str ^ "\nDerived Ineqs: [" ^ (String.concat ", " (List.map to_string (List.concat (List.tl ineqs)))) ^ "]" in
-    Format.pp_print_string f str
+    let ppc f c = 
+      ppi f c.ideal;
+      let str =
+        if List.length c.ineqs = 0 then "\nIneqs: [0]"
+        else
+          "\nBasis Ineqs: [" ^ (String.concat ", " (List.map to_string (List.hd c.ineqs))) ^ "]" ^ 
+          "\nDerived Ineqs: [" ^ (String.concat ", " (List.map to_string (List.concat (List.tl c.ineqs)))) ^ "]" in
+      Format.pp_print_string f str
 
   end

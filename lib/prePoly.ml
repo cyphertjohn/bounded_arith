@@ -161,6 +161,8 @@ module MakeP (M : sig
               val get_vars : monic_mon -> string list
               val mon_to_string : mon -> bool * string
               val is_const : mon -> bool
+              val lex_ord : monic_mon -> monic_mon -> int
+              val grlex_ord : monic_mon -> monic_mon -> int
             end ) = struct
 
   let set_ord order = M.ord := order
@@ -328,6 +330,10 @@ module MakeP (M : sig
     let neg_p2_n = mult_mon_poly M.minus_1 p2_n in
     add p1_n neg_p2_n
   
+  let lex_ord = M.lex_ord
+
+  let grlex_ord = M.grlex_ord
+
 end
 
 module Make ( C : Sigs.Coefficient) = MakeP(MakeMon(C))

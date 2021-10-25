@@ -264,9 +264,9 @@ let update_map cone term_map t_p eqs ineqs =
   let reduce v term acc_map =
     match term with
     | Floo p -> 
-      S.add v (Floo (C.reduce_eq p cone)) acc_map
+      S.add v (Floo (P.normalize (C.reduce_eq p cone))) acc_map
     | Recip p ->
-      S.add v (Recip (C.reduce_eq p cone)) acc_map
+      S.add v (Recip (P.normalize (C.reduce_eq p cone))) acc_map
   in
   let reduced_map = S.fold reduce term_map S.empty in
   let bindings = fst (List.split (S.bindings reduced_map)) in
@@ -353,8 +353,8 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
     let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equatio @ ineq))) in
     log_keep_map keep_map;
     (*P.set_ord (fun a b -> Log.log_time_cum "Monomial order" ((effective_deg_ord deg_map keep_map) a) b);*)
-    let new_cone = C.make_cone ~sat:sat (effective_deg_ord deg_map keep_map pure_vars top_order) equatio ineq in
-    update_map new_cone t_map tp (C.get_eq_basis new_cone) (C.get_ineq_basis new_cone)
+    let new_cone = C.make_cone ~sat:sat ~ord:(effective_deg_ord deg_map keep_map pure_vars top_order) ~eqs:equatio ~ineqs:ineq () in
+    update_map new_cone t_map tp (List.map P.normalize (C.get_eq_basis new_cone)) (List.map P.normalize (C.get_ineq_basis new_cone))
   in
   let rec loop old_map t_map tp equations inequalities =
     if equal_t_map old_map t_map then 

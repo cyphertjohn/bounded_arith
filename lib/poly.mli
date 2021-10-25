@@ -60,6 +60,9 @@ module type Polynomial = sig
 
   (** Initialize a polynomial from a constant *)
   val from_const : coef -> poly
+
+  (** Normalizes a polynomial. Only used when passing polynomials between modules, where one module might use a different order. *)
+  val normalize : poly -> poly
 end
 
 (** A functor for manipulating polynomials whose coeficients functions are given as input. *)
@@ -112,9 +115,15 @@ module type Cone = sig
 
     type monic_mon
 
+    (**An implication is a pair of polynomials. The head of the implication is the first element, and the consequent is the second element. *)
+    type impl = poly * poly
+
+    (**Infix operator for creating an implication. *)
+    val (=>) : poly -> poly -> impl
+
     (** [make_cone sat ord eq ineqs] creates a linear cone from a given monomial order [ord], a list of equations [eq], and a list of ineqs [ineqs] (assumed to be nonnegative). 
     The optional [sat] parameter will mutliply inequalities together up to the [sat] limit. Default is 1.*)
-    val make_cone : ?sat:int -> (monic_mon -> monic_mon -> int) -> poly list -> poly list -> cone
+    val make_cone : ?sat:int -> ?ord:(monic_mon -> monic_mon -> int) -> ?eqs:poly list -> ?ineqs:poly list -> ?impls: impl list -> unit -> cone
 
     (** Tests whether it is implied that the first argument is non-negative assuming the equations and inequalities given by the cone. *)
     val is_non_neg : poly -> cone -> bool
