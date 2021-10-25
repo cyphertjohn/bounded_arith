@@ -29,7 +29,7 @@ utop # to_string tmuldivinv_lower;;
 - : string = "1 - a + b^(-1)sf" 
 *)
 
-let tmuldivinv_upper = Bound.EqRewriter.rewrite [] 
+let tdivmulinv_upper = Bound.EqRewriter.rewrite [] 
 												[
 												from_string "((b floor((a sf) / (b))) / (sf)) - floor((b floor((a sf) / (b))) / (sf))"; (* floor upper bound rule *)
 												from_string "((a sf) / (b)) - floor((a sf) / (b))"; (* floor upper bound rule *)
@@ -42,7 +42,7 @@ utop # to_string tdivmulinv_upper;;
 - : string = "a" 
 *)
 
-let tmuldivinv_lower = Bound.EqRewriter.rewrite [] 
+let tdivmulinv_lower = Bound.EqRewriter.rewrite [] 
 												[
 												from_string "floor((b floor((a sf) / (b))) / (sf)) + 1 - ((b floor((a sf) / (b))) / (sf))"; (* floor lower bound rule *)
 												from_string "floor((a sf) / (b)) + 1 - ((a sf) / (b))"; (* floor lower bound rule *)
