@@ -23,14 +23,20 @@ let set_level lev =
   | "always" -> my_level := `always
   | _ -> failwith "Unrecognized Level"
 
-let log ?(level=`always) str = 
+let log ?(level=`always) pp obj = 
+  if level_leq !my_level level then
+    pp Format.std_formatter obj
+  else
+    ()
+
+let log_s ?(level=`always) str = 
   if level_leq !my_level level then
     Printf.fprintf !chan "%s" str
   else
     Printf.ifprintf !chan "%s" str;
   Printf.fprintf !chan "%!"
       
-let log_line ?(level=`always) str = 
+let log_line_s ?(level=`always) str = 
   if level_leq !my_level level then
     Printf.fprintf !chan "%s\n" str
   else

@@ -81,30 +81,42 @@ module PQ :
     val ppmm : Format.formatter -> monic_mon -> unit [@@ocaml.toplevel_printer]
   end
 
-(** An ideal of polynomial generators p_1, ..., p_n, is the set of polynomials f such that f = a_1p_1 + ... + a_np_n
-    for polynomials a_1, ..., a_n *)
-module Ideal :
-  functor (C : Sigs.Coefficient) -> 
-  sig
-
-    (** An ideal of polynomial generators p_1, ..., p_n, is the set of polynomials f such that f = a_1p_1 + ... + a_np_n
+module type Ideal = sig 
+ (** An ideal of polynomial generators p_1, ..., p_n, is the set of polynomials f such that f = a_1p_1 + ... + a_np_n
     for polynomials a_1, ..., a_n *)
     type ideal
 
+    type poly
+
+    type monic_mon
+
     (** Initialize an ideal with a given monomial order and set of generators.*)
-    val make_ideal : (Make(C).monic_mon -> Make(C).monic_mon -> int) -> Make(C).poly list -> ideal
+    val make_ideal : (monic_mon -> monic_mon -> int) -> poly list -> ideal
 
     (** Test whether a polynomial is a member of the ideal. *)
-    val mem : Make(C).poly -> ideal -> bool
+    val mem : poly -> ideal -> bool
 
     (** Reduce a polynomial by an ideal. That is [reduce p i], returns r, such that p = f + r, 
     with r minimum in the monomial order with f in the ideal.*)
-    val reduce : Make(C).poly -> ideal -> Make(C).poly
+    val reduce : poly -> ideal -> poly
 
     (** Get the generators (Grobner basis) of an ideal. *)
-    val get_generators : ideal -> Make(C).poly list
+    val get_generators : ideal -> poly list
 
-  end
+end
+
+(** An ideal of polynomial generators p_1, ..., p_n, is the set of polynomials f such that f = a_1p_1 + ... + a_np_n
+    for polynomials a_1, ..., a_n *)
+module Ideal :
+  functor (C : Sigs.Coefficient) -> Ideal
+
+
+module IdealQ : sig
+  include (Ideal with type poly := PQ.poly and type monic_mon := PQ.monic_mon)
+
+  val ppi : Format.formatter -> ideal -> unit [@@ocaml.toplevel_printer]
+
+end
 
 module type Cone = sig 
   (** A (linear) cone consists of an ideal, representing equations, and all positive linear combinations of a set of inequalities.

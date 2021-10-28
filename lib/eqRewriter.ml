@@ -5,6 +5,8 @@ module P = Poly.PQ
 
 module C = Poly.ConeQ
 
+module I = Poly.IdealQ
+
 module S = Map.Make(String)
 
 module VS = Set.Make(String)
@@ -12,14 +14,14 @@ module VS = Set.Make(String)
 type fun_app = Recip of (P.poly) | Floo of (P.poly)
 
 
-let log_keep_map keep_map =
+(*let log_keep_map keep_map =
   let mapping_to_string v keep acc = (v ^ " -> " ^ (string_of_bool keep)) :: acc in
   let map_string = String.concat "\n" (S.fold mapping_to_string keep_map []) in
   Log.log_line ~level:`trace "Keep Map";
   Log.log_line ~level:`trace map_string;
-  Log.log_line ~level:`trace ""
+  Log.log_line ~level:`trace ""*)
 
-let log_term_map term_map = 
+(*let log_term_map term_map = 
   let var_map_to_string var_map = 
     let mapping_to_string v fun_map acc = 
       let map_str =
@@ -37,9 +39,9 @@ let log_term_map term_map =
 
 let log_t tp = 
   Log.log_line ~level:`debug ("Curr t : " ^ (P.to_string tp));
-  Log.log_line ~level:`debug ""
+  Log.log_line ~level:`debug ""*)
 
-let log_polys ps = 
+(*let log_polys ps = 
   Log.log_line ~level:`debug ("Curr Polys");
   Log.log_line ~level:`debug (String.concat "\n" (List.map P.to_string ps));
   Log.log_line ~level:`debug ""
@@ -52,7 +54,7 @@ let log_ineqs ps =
 let log_top_order top = 
   Log.log_line ~level:`trace ("Top order");
   Log.log_line ~level:`trace ("[ " ^ (String.concat ";" (List.map (fun (i, v) -> "(" ^ (string_of_int i) ^ ", " ^ v ^ ")") top)) ^ "]\n");
-  Log.log_line ~level:`trace ("")
+  Log.log_line ~level:`trace ("")*)
 
 let sub_fun_app_var var_to_replace poly_to_replace_with term = 
   match term with
@@ -201,6 +203,18 @@ let calc_deg_map term_map =
   in
   S.map effective_degree unpure_map, top_order
     
+let inst_floor_recip map =
+  let folder v t (ineqs, impls) = 
+    match t with
+    | Floo p -> 
+      let ines = [P.add p (P.negate (P.from_var v)); P.add (P.add (P.from_var v) (P.from_const_s "1")) (P.negate p)] in (* t - floor(t)>=0 floor(t) + 1 - t>=0*)
+      let impl = (p, P.from_var v) in (* t >=0 => floor(t) >= 0*)
+      (ines @ ineqs, impl :: impls)
+    | Recip p ->
+      (ineqs, (p, P.from_var v) :: impls) (* t >= 0 => 1/t >= 0*)
+  in
+  S.fold folder map ([], [])
+
 
 let effective_deg_ord deg_map keep_map pure_vars top_order a b =
   let a_vars = P.get_vars_m a in
@@ -260,13 +274,13 @@ let unpurify polys term_map =
   let poly_to_expr poly = Add (List.map mon_to_expr (P.get_mons poly)) in
   List.map (fun p -> Expr.simplify (poly_to_expr p)) polys, top_order
 
-let update_map cone term_map t_p eqs ineqs = 
+let update_map ideal term_map t_p eqs ineqs = 
   let reduce v term acc_map =
     match term with
     | Floo p -> 
-      S.add v (Floo (P.normalize (C.reduce_eq p cone))) acc_map
+      S.add v (Floo (P.normalize (I.reduce p ideal))) acc_map
     | Recip p ->
-      S.add v (Recip (P.normalize (C.reduce_eq p cone))) acc_map
+      S.add v (Recip (P.normalize (I.reduce p ideal))) acc_map
   in
   let reduced_map = S.fold reduce term_map S.empty in
   let bindings = fst (List.split (S.bindings reduced_map)) in
@@ -292,14 +306,13 @@ let update_map cone term_map t_p eqs ineqs =
           aux l (new_eqs, new_ineqs, new_t, new_map) (*Potentially cheaper equality check*)
         else
           let subtract_poly = P.add t_i (P.negate t_j) in
-          let sub_rem = C.reduce_eq subtract_poly cone in
-          if P.is_zero sub_rem then 
+          if I.mem subtract_poly ideal then 
             let (new_eqs, new_ineqs, new_t, new_map) = remove_var_sub x_i x_j old_eqs old_ineqs old_tp old_map in
             aux l (new_eqs, new_ineqs, new_t, new_map)
           else aux l (old_eqs, old_ineqs, old_tp, old_map)
       | _ -> aux l (old_eqs, old_ineqs, old_tp, old_map)
   in
-  let red_t = C.reduce t_p cone in
+  let red_t = I.reduce t_p ideal in
   aux pairs (eqs, ineqs, red_t, reduced_map)
 
 let equal_t_map a b = 
@@ -343,22 +356,21 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
     else S.add v false acc
   in
   let iteration t_map tp equatio ineq =
-    log_term_map t_map;
-    log_t tp;
-    log_polys equatio;
-    log_ineqs ineq;
     let deg_map, top_order = calc_deg_map t_map in
-    log_top_order top_order;
-    (*let tvars = term_vars term_map in*)
     let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equatio @ ineq))) in
-    log_keep_map keep_map;
-    (*P.set_ord (fun a b -> Log.log_time_cum "Monomial order" ((effective_deg_ord deg_map keep_map) a) b);*)
-    let new_cone = C.make_cone ~sat:sat ~ord:(effective_deg_ord deg_map keep_map pure_vars top_order) ~eqs:equatio ~ineqs:ineq () in
-    update_map new_cone t_map tp (List.map P.normalize (C.get_eq_basis new_cone)) (List.map P.normalize (C.get_ineq_basis new_cone))
+    let new_ideal = I.make_ideal (effective_deg_ord deg_map keep_map pure_vars top_order) equatio in
+    Log.log ~level:`debug I.ppi new_ideal;
+    update_map new_ideal t_map tp (List.map P.normalize (I.get_generators new_ideal)) ineq
   in
   let rec loop old_map t_map tp equations inequalities =
     if equal_t_map old_map t_map then 
-      let unpure_t, _ = unpurify [tp] t_map in
+      let deg_map, top_order = calc_deg_map t_map in
+      let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equations @ inequalities))) in
+      let (inequ, impls) = inst_floor_recip t_map in
+      let cone = C.make_cone ~sat:sat ~eqs:equations ~ord:(effective_deg_ord deg_map keep_map pure_vars top_order) ~ineqs:(inequalities @ inequ) ~impls:impls () in
+      Log.log ~level:`debug C.ppc cone;
+      let red_tp = C.reduce tp cone in
+      let unpure_t, _ = unpurify [red_tp] t_map in
       List.hd (unpure_t)
     else
       let (new_eqs, new_ineqs, new_t, new_map) = iteration t_map tp equations inequalities in

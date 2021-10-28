@@ -69,6 +69,25 @@ end
 
 module PQ = Make(Sigs.Q)
 
+
+module type Ideal = sig 
+
+    type ideal
+
+    type poly
+
+    type monic_mon
+
+    val make_ideal : (monic_mon -> monic_mon -> int) -> poly list -> ideal
+
+    val mem : poly -> ideal -> bool
+
+    val reduce : poly -> ideal -> poly
+
+    val get_generators : ideal -> poly list
+
+end
+
 module Ideal (C : Sigs.Coefficient) = struct
 
   include Make(C)
@@ -202,13 +221,16 @@ module Ideal (C : Sigs.Coefficient) = struct
 
 
   let ppi f (i : ideal) = 
+    Format.pp_print_string f "Ideal";
+    Format.print_newline ();
     let str =
       match i with
       | Top -> "<1>"
       | Bot -> "<0>"
       | I basis -> "<" ^ (String.concat ", " (List.map to_string basis)) ^ ">"
     in
-    Format.pp_print_string f str
+    Format.pp_print_string f str;
+    Format.print_newline ()
 
   let make_ideal order eqs : ideal = 
     set_ord order; 
@@ -378,7 +400,11 @@ module Cone(C : Sigs.Coefficient) = struct
     in
     dim_map, List.map poly_to_coef_map polys
     
-    
+  let pp_prob f prob = 
+    let prob_str = Lp.Problem.to_string ~short:true prob in
+    Format.pp_print_string f prob_str;
+    Format.print_newline ()
+
 
   let is_non_neg p c = 
     let id, ineqs = c.ideal, c.ineqs in
@@ -413,7 +439,7 @@ module Cone(C : Sigs.Coefficient) = struct
       in
     let cnstrs = DimMap.fold generate_cnstrs dim_map [] in
     let prob = Lp.Problem.make (Lp.Objective.minimize Lp.Poly.zero) cnstrs in
-    Log.log_line ~level:`trace (Lp.Problem.to_string ~short:true prob);
+    Log.log ~level:`trace pp_prob prob;
     match Lp_glpk.solve ~term_output:false prob with
     | Ok _ -> true
     | Error _ -> false
@@ -450,7 +476,7 @@ module Cone(C : Sigs.Coefficient) = struct
       let hard_cnsts, r_cnsts, r_to_dim = DimMap.fold generate_cnstrs dim_map ([], [], S.empty) in
       let rec find_optimal_sol rs = 
         let prob = Lp.Problem.make (Lp.Objective.minimize Lp.Poly.zero) (hard_cnsts @ rs) in
-        Log.log_line ~level:`trace (Lp.Problem.to_string ~short:true prob);
+        Log.log ~level:`trace pp_prob prob;
         match Lp_glpk.solve ~term_output:false prob with
         | Ok (_, s) ->
           let folder r_s r_val res = 
@@ -499,19 +525,20 @@ module Cone(C : Sigs.Coefficient) = struct
     let prod_sat_cone = List.fold_left add_ineq {depth=sat; ideal= ideal; ineqs= []} ineqs in
     saturate prod_sat_cone impls
 
-end
-
-module ConeQ = 
-  struct
-    include Cone(Sigs.Q)
-    
-    let ppc f c = 
+  let ppc f c = 
+      Format.pp_print_string f "Cone";
+      Format.print_newline ();
       ppi f c.ideal;
       let str =
-        if List.length c.ineqs = 0 then "\nIneqs: [0]"
+        if List.length c.ineqs = 0 then "Ineqs: [0]"
         else
-          "\nBasis Ineqs: [" ^ (String.concat ", " (List.map to_string (List.hd c.ineqs))) ^ "]" ^ 
-          "\nDerived Ineqs: [" ^ (String.concat ", " (List.map to_string (List.concat (List.tl c.ineqs)))) ^ "]" in
-      Format.pp_print_string f str
+          "Basis Ineqs: [" ^ (String.concat ", " (List.map to_string (List.hd c.ineqs))) ^ "]\n" ^ 
+          "Derived Ineqs: [" ^ (String.concat ", " (List.map to_string (List.concat (List.tl c.ineqs)))) ^ "]" in
+      Format.pp_print_string f str;
+      Format.print_newline ()
 
-  end
+end
+
+module ConeQ = Cone(Sigs.Q)
+
+module IdealQ = Ideal(Sigs.Q)
