@@ -249,7 +249,7 @@ module MakeP (M : sig
 
   let ppmm f mm = Format.pp_print_string f (snd (M.mon_to_string (M.from_string_c "1", mm)))
 
-  let pp f p = Format.pp_print_string f (to_string p)
+  let pp f p = Format.pp_print_string f (to_string p); Format.print_newline ()
 
 (*  let add_mon (Coef c1, m) (Sum a) =
     if a = [] then Sum [(Coef c1, m)]

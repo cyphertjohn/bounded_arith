@@ -21,7 +21,7 @@ type fun_app = Recip of (P.poly) | Floo of (P.poly)
   Log.log_line ~level:`trace map_string;
   Log.log_line ~level:`trace ""*)
 
-(*let log_term_map term_map = 
+let ppmap f term_map = 
   let var_map_to_string var_map = 
     let mapping_to_string v fun_map acc = 
       let map_str =
@@ -33,13 +33,8 @@ type fun_app = Recip of (P.poly) | Floo of (P.poly)
     in
     String.concat "\n" (S.fold mapping_to_string var_map [])
   in
-  Log.log_line ~level:`debug "Curr Map";
-  Log.log_line ~level:`debug (var_map_to_string term_map);
-  Log.log_line ~level:`debug ""
-
-let log_t tp = 
-  Log.log_line ~level:`debug ("Curr t : " ^ (P.to_string tp));
-  Log.log_line ~level:`debug ""*)
+  Format.pp_print_string f ("Variable map:\n" ^ (var_map_to_string term_map));
+  Format.print_newline ()
 
 (*let log_polys ps = 
   Log.log_line ~level:`debug ("Curr Polys");
@@ -275,14 +270,35 @@ let unpurify polys term_map =
   List.map (fun p -> Expr.simplify (poly_to_expr p)) polys, top_order
 
 let update_map ideal term_map t_p eqs ineqs = 
-  let reduce v term acc_map =
+  let reduce v term (acc_map, const_sub) =
     match term with
     | Floo p -> 
-      S.add v (Floo (P.normalize (I.reduce p ideal))) acc_map
+      let p_red = P.normalize (I.reduce p ideal) in
+      if P.is_const p_red then
+        let const = fst (List.hd (P.get_mons p_red)) in
+        (acc_map, (v, P.from_const (Sigs.Q.floor const)) :: const_sub)
+      else
+        S.add v (Floo (P.normalize (I.reduce p ideal))) acc_map, const_sub
     | Recip p ->
-      S.add v (Recip (P.normalize (I.reduce p ideal))) acc_map
+      let p_red = P.normalize (I.reduce p ideal) in
+      if P.is_const p_red then
+        let const = fst (List.hd (P.get_mons p_red)) in
+        (acc_map, (v, P.from_const (Sigs.Q.divc (Sigs.Q.from_string_c "1") const)) :: const_sub)
+      else
+        S.add v (Recip (P.normalize (I.reduce p ideal))) acc_map, const_sub
   in
-  let reduced_map = S.fold reduce term_map S.empty in
+  let reduced_map, const_subs = S.fold reduce term_map (S.empty, []) in
+  let sub_consts term = 
+    match term with
+    | Floo p -> 
+      Floo (List.fold_left (fun p2 s -> P.substitute s p2) p const_subs)
+    | Recip p -> 
+      Recip (List.fold_left (fun p2 s -> P.substitute s p2) p const_subs)
+  in
+  let sub_polys = List.map (fun p -> List.fold_left (fun p2 s -> P.substitute s p2) p const_subs) in
+  let eqs = sub_polys eqs in
+  let ineqs = sub_polys ineqs in
+  let reduced_map = S.map sub_consts reduced_map in
   let bindings = fst (List.split (S.bindings reduced_map)) in
   let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
   let pairs = get_pairs bindings in
@@ -359,6 +375,7 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
     let deg_map, top_order = calc_deg_map t_map in
     let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equatio @ ineq))) in
     let new_ideal = I.make_ideal (effective_deg_ord deg_map keep_map pure_vars top_order) equatio in
+    Log.log ~level:`debug ppmap t_map;
     Log.log ~level:`debug I.ppi new_ideal;
     update_map new_ideal t_map tp (List.map P.normalize (I.get_generators new_ideal)) ineq
   in

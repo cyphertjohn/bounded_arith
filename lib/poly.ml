@@ -26,6 +26,8 @@ module type Polynomial = sig
 
   val is_zero : poly -> bool
 
+  val is_const : poly -> bool
+
   val compare : poly -> poly -> int
     
   val from_string : string -> poly
@@ -234,13 +236,15 @@ module Ideal (C : Sigs.Coefficient) = struct
 
   let make_ideal order eqs : ideal = 
     set_ord order; 
-    if List.length eqs = 0 then Bot
+    let normal = List.filter (fun p -> not (is_zero p)) (List.map normalize eqs) in
+    if List.length normal = 0 || List.for_all is_zero normal then 
+      Bot
+    else if List.exists is_const normal then 
+      Top
     else 
-      let normal = List.filter (fun p -> not (is_zero p)) (List.map normalize eqs) in
-      if List.length normal = 0 || List.for_all is_zero normal then Bot
-      else if List.exists is_const normal then Top
-      else improved_buchberger normal
+      improved_buchberger normal
 
+  
   let mem p i =
     match i with
     | Top -> true

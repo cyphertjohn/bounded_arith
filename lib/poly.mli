@@ -34,6 +34,9 @@ module type Polynomial = sig
   (** Test if a polynomial is zero. *)
   val is_zero : poly -> bool
 
+  (** Test if a polynomial is constant. *)
+  val is_const : poly -> bool
+
   (** Polynomial comparison. The result does not correspond to any arithmetic order.*)
   val compare : poly -> poly -> int
     
