@@ -14,18 +14,9 @@ let vname i = "r" ^ (string_of_int i)
 
 (* **************************************************************************** *)
 
-(* exact:
-  with n=3:
-Rewrite upper: 0.928800 s
-val tupper : Bound.Sigs.Q.coef Bound.Sigs.Expr.expr =
-  6899671712437419/1125899906842624
-Rewrite lower: 1.087191 s
-val tlower : Bound.Sigs.Q.coef Bound.Sigs.Expr.expr =
-  16(5/2 + 1/8x - 2(1 + 1/4x)^-1)^-2
- *)
 let iter_str r = Str.global_replace (regexp "v") r "(((v) + x / (v)) / (2))"
 
-let n = 3
+let n = 2
 
 (* ************************************************************************************ *)
 
@@ -49,7 +40,7 @@ let ineq_assumptions = [
                 from_string (vname 0);
                 (* from_string ((vname 0) ^ "^2 - x"); (* initial guess >= sqrt(x) *) *)
                 (* from_string ("x - " ^ "("^(vname 0)^"/(2))^2"); (* previous power of 2 is <= sqrt(x) *) *)
-                from_string "2 - x";
+                from_string "39 - x";
                 from_string "x - 1";
               ] 
 
@@ -62,7 +53,7 @@ let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite
               background_theory
               ineq_assumptions
               vars_to_keep)
-              (from_string "(res)^2 - x")
+              (from_string "(res - 1)^2 - x")
 
 let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite 
               background_theory
