@@ -51,13 +51,13 @@ let vars_to_keep = ["x"; (vname 0)]
 
 (* ************************************************************************************ *)
 
-let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite ~sat:4
+let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite ~sat:5
               background_theory
               ineq_assumptions
               vars_to_keep)
               (from_string "(res - 1)^2 - x")
 
-let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite ~sat:4
+let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite ~sat:5
               background_theory
               ineq_assumptions
               vars_to_keep)
