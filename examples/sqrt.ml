@@ -8,11 +8,11 @@ let vname i = "r" ^ (string_of_int i)
 (* https://en.wikipedia.org/wiki/Integer_square_root *)
 (* https://dl.acm.org/doi/pdf/10.1145/37523.37525 *)
 
-let iter_str r = Str.global_replace (regexp "r0") r "floor(((r0) + floor(x / (r0))) / (2))"
+(* let iter_str r = Str.global_replace (regexp "r0") r "floor(((r0) + floor(x / (r0))) / (2))" *)
 
 (* **************************************************************************** *)
 
-(* let iter_str r = Str.global_replace (regexp "v") r "floor(((v) + x / (v)) / (2))" *)
+let iter_str r = Str.global_replace (regexp "v") r "floor(((v) + x / (v)) / (2))"
 
 (* **************************************************************************** *)
 
