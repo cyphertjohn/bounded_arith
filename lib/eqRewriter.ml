@@ -135,7 +135,7 @@ let calc_keep_vars term_map vars_to_keep =
               ref_acc := new_acc) in
             S.find v_sub !ref_acc
         in
-        let keep = List.for_all keep_variable vars in
+        let keep = BatEnum.for_all keep_variable vars in
         S.add v keep !ref_acc
   in
   let res = S.fold aux term_map S.empty in
@@ -158,14 +158,14 @@ let unpurify_map term_map =
         let new_map, var_exp, new_top_order = var_to_expr c_map var o_top_order in
         new_map, var_exp :: exs, new_top_order
       in
-      let new_map, mon_exs, new_top_order = List.fold_left mon_folder (curr_acc, [Coe mon_coef], old_top_order) mon_vars in
+      let new_map, mon_exs, new_top_order = BatEnum.fold mon_folder (curr_acc, [Coe mon_coef], old_top_order) mon_vars in
       new_map, Mult mon_exs, new_top_order
     and poly_to_expr curr_acc poly old_top_order = 
       let poly_folder (c_map, exs, o_top_order) mon = 
         let new_map, mon_exp, new_top_order = mon_to_expr c_map mon o_top_order in
         new_map, mon_exp :: exs, new_top_order
       in
-      let new_map, poly_exs, new_top_order = List.fold_left poly_folder (curr_acc, [], old_top_order) (P.get_mons poly) in
+      let new_map, poly_exs, new_top_order = BatEnum.fold poly_folder (curr_acc, [], old_top_order) (P.get_mons poly) in
       new_map, Add poly_exs, new_top_order
     and fun_app_to_expr curr_acc fun_ap old_top_order = 
       match fun_ap with
@@ -214,7 +214,7 @@ let inst_floor_recip map =
 let effective_deg_ord deg_map keep_map pure_vars top_order a b =
   let a_vars = P.get_vars_m a in
   let b_vars = P.get_vars_m b in
-  let (avd, bvd) = (List.map (fun v -> v, P.get_degree v a) a_vars, List.map (fun v -> v, P.get_degree v b) b_vars) in
+  let (avd, bvd) = (BatEnum.map (fun v -> v, P.get_degree v a) a_vars, BatEnum.map (fun v -> v, P.get_degree v b) b_vars) in
   let folder (rem_deg, keep_deg) (v, d) = 
     if S.find v keep_map then 
       if S.mem v deg_map then (rem_deg, keep_deg + d * (S.find v deg_map))
@@ -223,7 +223,7 @@ let effective_deg_ord deg_map keep_map pure_vars top_order a b =
       if S.mem v deg_map then (rem_deg + d * (S.find v deg_map), keep_deg)
       else (rem_deg + d, keep_deg)
   in
-  let (a_deg, b_deg) = (List.fold_left folder (0, 0) avd, List.fold_left folder (0, 0) bvd) in
+  let (a_deg, b_deg) = (BatEnum.fold folder (0, 0) avd, BatEnum.fold folder (0, 0) bvd) in
   if (fst a_deg = fst b_deg) then 
     if (snd a_deg = snd b_deg) then
       let cmp_var (x, xe) (y, ye) = 
@@ -247,7 +247,7 @@ let effective_deg_ord deg_map keep_map pure_vars top_order a b =
           if cmp_res = 0 then well_formed_lex xs ys
           else cmp_res
       in
-      let (a_s, b_s) = (List.rev (List.sort cmp_var avd), List.rev (List.sort cmp_var bvd)) in
+      let (a_s, b_s) = (List.rev (List.sort cmp_var (BatList.of_enum avd)), List.rev (List.sort cmp_var (BatList.of_enum bvd))) in
       well_formed_lex a_s b_s
     else compare (snd a_deg) (snd b_deg)
   else compare (fst a_deg) (fst b_deg)
@@ -264,28 +264,28 @@ let unpurify polys term_map =
         else
           if deg = 1 then Var mv
           else Pow(Var mv, deg)
-      ) mon_vars))
+      ) (BatList.of_enum mon_vars)))
   in
-  let poly_to_expr poly = Add (List.map mon_to_expr (P.get_mons poly)) in
+  let poly_to_expr poly = Add (List.map mon_to_expr (BatList.of_enum (P.get_mons poly))) in
   List.map (fun p -> Expr.simplify (poly_to_expr p)) polys, top_order
 
 let update_map ideal term_map t_p eqs ineqs = 
   let reduce v term (acc_map, const_sub) =
     match term with
     | Floo p -> 
-      let p_red = P.normalize (I.reduce p ideal) in
+      let p_red = I.reduce p ideal in
       if P.is_const p_red then
-        let const = fst (List.hd (P.get_mons p_red)) in
+        let const = fst (List.hd (BatList.of_enum (P.get_mons p_red))) in
         (acc_map, (v, P.from_const (Sigs.Q.floor const)) :: const_sub)
       else
-        S.add v (Floo (P.normalize (I.reduce p ideal))) acc_map, const_sub
+        S.add v (Floo p_red) acc_map, const_sub
     | Recip p ->
-      let p_red = P.normalize (I.reduce p ideal) in
+      let p_red = I.reduce p ideal in
       if P.is_const p_red then
-        let const = fst (List.hd (P.get_mons p_red)) in
+        let const = fst (List.hd (BatList.of_enum (P.get_mons p_red))) in
         (acc_map, (v, P.from_const (Sigs.Q.divc (Sigs.Q.from_string_c "1") const)) :: const_sub)
       else
-        S.add v (Recip (P.normalize (I.reduce p ideal))) acc_map, const_sub
+        S.add v (Recip p_red) acc_map, const_sub
   in
   let reduced_map, const_subs = S.fold reduce term_map (S.empty, []) in
   let sub_consts term = 
@@ -344,7 +344,7 @@ let equal_t_map a b =
         let b_term = S.find v b in
         match (a_term, b_term) with
         | Recip a_p, Recip b_p | Floo a_p, Floo b_p ->
-          if P.compare a_p b_p = 0 then true
+          if P.equal a_p b_p then true
           else false
         | _ -> false
     in
@@ -373,16 +373,18 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
   in
   let iteration t_map tp equatio ineq =
     let deg_map, top_order = calc_deg_map t_map in
-    let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equatio @ ineq))) in
+    let keep_map = BatEnum.fold keep_folder (calc_keep_vars t_map vars_to_keep) (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (tp::equatio @ ineq)))) in
     let new_ideal = I.make_ideal (effective_deg_ord deg_map keep_map pure_vars top_order) equatio in
     Log.log ~level:`debug ppmap t_map;
+    Log.log_s ~level:`debug "Curr t: ";
+    Log.log ~level:`debug P.pp tp;
     Log.log ~level:`debug I.ppi new_ideal;
-    update_map new_ideal t_map tp (List.map P.normalize (I.get_generators new_ideal)) ineq
+    update_map new_ideal t_map tp (I.get_generators new_ideal) ineq
   in
   let rec loop old_map t_map tp equations inequalities =
     if equal_t_map old_map t_map then 
       let deg_map, top_order = calc_deg_map t_map in
-      let keep_map = List.fold_left keep_folder (calc_keep_vars t_map vars_to_keep) (List.concat (List.map P.get_vars (tp::equations @ inequalities))) in
+      let keep_map = BatEnum.fold keep_folder (calc_keep_vars t_map vars_to_keep) (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (tp::equations @ inequalities)))) in
       let (inequ, impls) = inst_floor_recip t_map in
       let cone = C.make_cone ~sat:sat ~eqs:equations ~ord:(effective_deg_ord deg_map keep_map pure_vars top_order) ~ineqs:(inequalities @ inequ) ~impls:impls () in
       Log.log ~level:`debug C.ppc cone;
