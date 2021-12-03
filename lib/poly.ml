@@ -25,8 +25,6 @@ module type Polynomial = sig
     
   val exp_poly : poly -> int -> poly
 
-  val substitute_mon : string * poly -> mon -> poly
-
   val substitute :
     string * poly -> poly -> poly
 
@@ -59,7 +57,7 @@ end
 
 module Make (C : Sigs.Coefficient) = struct
 
-  module PP = PrePolyfut.Make(C)
+  module PP = PrePoly.Make(C)
 
   module P = PolyParse.Make(PP)
 

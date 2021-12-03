@@ -1,148 +1,154 @@
+
 module MakeMon (C : Sigs.Coefficient) = struct
-                  
+
   include C
 
-  type var_power = Exp of string * int
-
-  type monic_mon = Prod of var_power list
-
-  let get_deg (Exp (_, e)) = e
-
-  let cmp_var (Exp(x, e1)) (Exp(y, e2)) = if compare x y = 0 then compare e1 e2 else -1 * (compare x y)
-                 
-  let sort_monic_mon (Prod l) = 
-    let remove_one = List.filter (fun (Exp(_, e)) -> e <> 0) l in
-    Prod (List.rev (List.sort cmp_var remove_one))
-
-  let rec lex_ord a b = 
-    match (a, b) with
-    | (Prod [], Prod []) -> 0
-    | (Prod [], _) -> -1
-    | (_, Prod []) -> 1
-    | (Prod (x :: xs), Prod (y :: ys)) -> if cmp_var x y = 0 then lex_ord (Prod xs) (Prod ys)
-                                          else cmp_var x y
-  
-  let total_deg (Prod m) = List.fold_left (+) 0 (List.map get_deg m)
-  
-  let grlex_ord a b =
-    if compare (total_deg a) (total_deg b) = 0 then lex_ord a b
-    else compare (total_deg a) (total_deg b)
-
-  
-
-  let sort_monomial (coef, mon) = (coef, sort_monic_mon mon)
+  type monic_mon = (string * int) list
 
   type mon = coef * monic_mon
 
-  let zero = C.from_string_c "0", Prod []
+  let zero_mon = []
 
-  let minus_1 = C.from_string_c "-1", Prod []
+  let make_mon_from_coef c = (c, zero_mon)
 
-  let is_zero (c, _) = C.is_zero c
+  let make_mon_from_var s i : mon = (from_string_c "1", [(s, i)])
 
-  let make_mon_from_coef c = c, Prod []
+  let mon_from_coef c = (C.from_string_c c, zero_mon)
 
-  let make_mon_from_var v d = C.from_string_c "1", Prod[Exp(v, d)]
+  let zero = mon_from_coef "0"
+
+  let minus_1 = mon_from_coef "-1"
+
+  let is_zero (c, m) = 
+    if C.is_zero c then
+      if m = [] then true
+      else failwith "Monomial has zero coefficient but is not empty"
+    else false
   
+  (*let get_monic_mon (N (_, mon)) = mon
+  
+  let get_coef (N (Coef c, _)) = c*)
 
-  let add_mon a b = 
+  (*let add_mon (a : mon) (b : mon) = 
     if is_zero a then Some b
     else if is_zero b then Some a
     else
       let (ac, amon), (bc, bmon) = (a, b) in
-      if amon = bmon then 
+      if BatMap.String.equal (=) amon bmon then 
         let c = C.addc ac bc in
         if C.is_zero c then Some zero
-        else Some ((C.addc ac bc), amon)
-      else None
+        else Some (c, amon)
+      else None*)
     
 
-  let mult_mon a b = 
+  let mult_mon (a : mon) (b : mon) : mon = 
     let new_coef = C.mulc (fst a) (fst b) in
-    if (C.is_zero new_coef) then new_coef, Prod []
+    if (C.is_zero new_coef) then zero
     else 
-      let (Prod l1, Prod l2) = (snd a, snd b) in
-      let rec zip m1 m2 acc =
-        match (m1, m2) with 
-        | ([], []) -> (new_coef, Prod (List.rev acc))
-        | (_, []) -> (new_coef, Prod ((List.rev acc) @ m1))
-        | ([], _) -> (new_coef, Prod ((List.rev acc) @ m2))
-        | ((Exp (x, e1)) :: xs, Exp (y, e2) :: ys) -> 
-          if x = y then zip xs ys ((Exp (y, e1+e2)) :: acc)
-          else if compare x y < 0 then zip xs m2 ((Exp (x, e1)) :: acc)
-          else zip m1 ys ((Exp (y, e2)) :: acc)
-      in
-      zip l1 l2 []
-
-
-  let divide_mon a b = 
+      let rec zip acc am bm = 
+        match am, bm with
+        | [], [] -> List.rev acc
+        | _ :: _ , [] -> (List.rev acc) @ am
+        | [], _ :: _ -> (List.rev acc) @ bm
+        | (av, ae) :: a_rest, (bv, be) :: b_rest ->
+          if av = bv then
+            zip ((av, ae + be) :: acc) a_rest b_rest
+          else if av < bv then
+            zip ((av, ae) :: acc) a_rest bm
+          else
+            zip ((bv, be) :: acc) am b_rest
+        in
+      (new_coef, zip [] (snd a) (snd b))
+  
+  let divide_mon (a : mon) (b : mon) : mon option = 
     let b_coef = fst b in
     if C.is_zero b_coef then failwith "Divide by 0";
     let new_coef = C.divc (fst a) (fst b) in
-    let (Prod vars) = snd b in
-    let (Prod alist) = snd a in
+    let blist = snd b in
+    let alist = snd a in
     let rec var_divide rema remb acc =
       match (rema, remb) with
       | [], [] -> Some (List.rev acc)
       | [], _ :: _ -> None
       | _, [] -> Some ((List.rev acc) @ rema)
-      | Exp(av, ae) :: remas, Exp (bv, be) :: rembs ->
+      | (av, ae) :: remas, (bv, be) :: rembs ->
         if av = bv && ae = be then var_divide remas rembs acc
-        else if av = bv && ae > be then var_divide remas rembs ((Exp (av, ae - be)) :: acc)
+        else if av = bv && ae > be then var_divide remas rembs (((av, ae - be)) :: acc)
         else if av = bv && ae < be then None
-        else if av < bv then var_divide remas remb ((Exp(av, ae)) :: acc)
+        else if av < bv then var_divide remas remb (((av, ae)) :: acc)
         else None
     in
-    match (var_divide alist vars []) with
+    match (var_divide alist blist []) with
     | None -> None
-    | Some new_mon -> Some (new_coef, Prod new_mon)
+    | Some new_mon -> Some (new_coef, new_mon)
   
-  let lcm_of_mon (Prod a) (Prod b) = 
+  let lcm_of_mon (a : monic_mon) (b : monic_mon) : monic_mon = 
     let rec aux x y acc =
       match (x, y) with
       | ([], _) -> y @ acc
       | (_, []) -> x @ acc
-      | (Exp(xvar, e1) :: xs, Exp(yvar, e2) :: ys) -> 
-        if xvar = yvar then Exp(xvar, max e1 e2) :: (aux xs ys acc)
-        else if xvar < yvar then Exp(xvar, e1) :: (aux xs y acc)
-        else Exp(yvar, e2) :: (aux ys x acc)
+      | ((xvar, e1) :: xs, (yvar, e2) :: ys) -> 
+        if xvar = yvar then (xvar, max e1 e2) :: (aux xs ys acc)
+        else if xvar < yvar then (xvar, e1) :: (aux xs y acc)
+        else (yvar, e2) :: (aux ys x acc)
     in
-    Prod (aux a b [])
+    (aux a b [])
 
-
-  let ord = ref lex_ord
-
-  let degree v (Prod l) = 
-    let var_exp = List.find_opt (fun (Exp (x, _)) -> v = x) l in
-    match var_exp with
+  let degree v (m : monic_mon) = 
+    match List.find_opt (fun (var, _) -> v = var) m with
+    | Some (_, d) -> d
     | None -> 0
-    | Some (Exp (_, d)) -> d
-    
-  let get_vars (Prod l) = 
-    let folder acc (Exp (v, _)) = 
-      if List.mem v acc then acc
+
+  let get_vars (m : monic_mon) = 
+    BatList.enum (List.map fst m)
+
+  let monic_mon_to_string (m : monic_mon) = 
+    let folder acc (v, e) = 
+      if e > 1 then (v ^ "^" ^ (string_of_int e)) :: acc
       else v :: acc
     in
-    List.fold_left folder [] l
+    String.concat "" (List.rev (List.fold_left folder [] m))
 
-  let var_power_to_string (Exp(x, e)) = if e > 1 then x ^ "^" ^ (string_of_int e) else x
-  let monic_mon_to_string m = String.concat "" (List.map var_power_to_string (let Prod l = m in l))
-
-  let mon_to_string (c, Prod m) =
+  let mon_to_string (c, m) =
     let is_neg, norm_c = 
       if cmp c (from_string_c "0") < 0 then true, (mulc c (from_string_c "-1"))
       else false, c
     in
     if m = [] then is_neg, to_string_c norm_c
-    else if is_one norm_c then is_neg, (monic_mon_to_string (Prod m))
-    else is_neg, (to_string_c norm_c) ^ (monic_mon_to_string (Prod m)) 
+    else if is_one norm_c then is_neg, (monic_mon_to_string m)
+    else is_neg, (to_string_c norm_c) ^ (monic_mon_to_string m)
+
+  let is_const ((_, m) : mon) = m = []
+
+  let rec lex_ord a b = 
+    match (a, b) with
+    | ([], []) -> 0
+    | ([], _ :: _) -> -1
+    | (_ :: _, []) -> 1
+    | ((xv, xe) :: xs, (yv, ye) :: ys) -> 
+      if xv = yv then 
+        if compare xe ye = 0 then lex_ord xs ys
+        else compare xe ye
+      else if xv < yv then 1
+      else (-1)
+
+  let total_deg (m : monic_mon) = 
+    List.fold_left (fun acc (_, e) -> e + acc) 0 m
+
+
+  let grlex_ord (a : monic_mon) (b : monic_mon) = 
+    let a_deg = total_deg a in
+    let b_deg = total_deg b in
+    if compare a_deg b_deg = 0 then lex_ord a b
+    else compare a_deg b_deg
+
+  let ord = ref lex_ord
+
+  let mon_ord (c1, m1) (c2, m2) = 
+    let order = !ord m1 m2 in
+    if order = 0 then C.cmp c1 c2 else order
   
-  let is_const (_, Prod m) = 
-    if List.length m > 0 then false
-    else true
 end
-
-
 module MakeP (M : sig
               include Sigs.Coefficient
               type monic_mon
@@ -153,12 +159,12 @@ module MakeP (M : sig
               val zero : mon
               val ord : (monic_mon -> monic_mon -> int) ref
               val minus_1 : mon
-              val add_mon : mon -> mon -> mon option
+              (*val add_mon : mon -> mon -> mon option*)
               val mult_mon : mon -> mon -> mon
               val divide_mon : mon -> mon -> mon option
               val lcm_of_mon : monic_mon -> monic_mon -> monic_mon
               val degree : string -> monic_mon -> int
-              val get_vars : monic_mon -> string list
+              val get_vars : monic_mon -> string BatEnum.t
               val mon_to_string : mon -> bool * string
               val is_const : mon -> bool
               val lex_ord : monic_mon -> monic_mon -> int
@@ -167,117 +173,154 @@ module MakeP (M : sig
 
   let set_ord order = M.ord := order
 
-  type poly = NSum of (M.mon list)
+  module Mon = M
 
-  module M = M
+  type poly = (M.monic_mon, M.coef) BatHashtbl.t
 
-  let from_var s = NSum [M.make_mon_from_var s 1]
+  let make_poly_from_mon (m : M.mon) : poly = 
+    if M.is_zero m then BatHashtbl.create 20
+    else
+      let coefs = BatHashtbl.create 20 in
+      BatHashtbl.add coefs (snd m) (fst m);
+      coefs
 
-  let from_const c = NSum [M.make_mon_from_coef c]
+  let from_var s : poly = make_poly_from_mon (M.make_mon_from_var s 1)
+
+  let from_const c : poly = make_poly_from_mon (M.make_mon_from_coef c)
 
   let from_const_s s = from_const (M.from_string_c s)
 
-  let from_var_pow s e = NSum [M.make_mon_from_var s e]
+  let from_var_pow s e : poly = make_poly_from_mon (M.make_mon_from_var s e)
 
-  let negate (NSum mons) = NSum (List.map (fun m -> M.mult_mon m (M.minus_1)) mons)
+  let negate (mons : poly) = 
+    BatHashtbl.map (fun _ c -> M.mulc c (M.from_string_c "-1")) mons
 
   let get_degree = M.degree
 
   let get_vars_m = M.get_vars
 
-  let get_mons (NSum l) = l
+  let get_mons (mons : poly) : M.mon BatEnum.t = BatEnum.map (fun (a, b) -> (b, a)) (BatHashtbl.enum mons)
 
-  let get_vars (NSum poly) = 
-    let with_dups = List.concat (List.map (fun (_, m) -> M.get_vars m) poly) in
-    let uniq_cons xs x = if List.mem x xs then xs else x :: xs in
-    let remove_dups xs = List.fold_left uniq_cons [] xs in
-    remove_dups with_dups
-
+  let get_vars (mons : poly) = 
+    let with_dups = BatEnum.concat (BatEnum.map (fun (m, _) -> M.get_vars m) (BatHashtbl.enum mons)) in
+    BatEnum.uniq with_dups
   
-  let collect_terms_normal (NSum sorted) = 
-    if List.length sorted = 0 then NSum [M.zero]
-    else
-      let folder (acc, prev_m) curr_m =
-        match (M.add_mon prev_m curr_m) with
-        | Some res-> 
-          (acc, res)
-        | _ ->
-          (prev_m :: acc, curr_m)
-      in
-      let (monomials, last) = List.fold_left folder ([], M.zero) sorted in
-      let res_with_0 = List.rev (last :: monomials) in
-      let without_0 = List.filter (fun x -> not (M.is_zero x)) res_with_0 in
-      if List.length without_0 = 0 then NSum [M.zero]
-      else NSum (without_0)
+  (*let collect_terms (mons : poly) : poly = 
+    let collected_terms = BatEnum.group_by (fun x y -> !M.ord (snd x) (snd y) = 0) mons in
+    let res_with_0 = BatEnum.map 
+      (fun terms -> 
+        let reducer a b =
+          match M.add_mon a b with
+          | Some r -> r
+          | None -> failwith "BatEnum didn't collect common terms"
+        in
+        BatEnum.reduce reducer terms
+        ) collected_terms
+    in
+    let without_0 = BatEnum.filter (fun x -> not (M.is_zero x)) res_with_0 in
+    if BatEnum.is_empty without_0 then BatEnum.singleton M.zero
+    else without_0*)
 
   let mon_order (ac, am) (bc, bm) = 
     let mon_cmp = !M.ord am bm in
     if mon_cmp = 0 then M.cmp ac bc
     else mon_cmp
 
-  let normalize (NSum poly) = 
-    collect_terms_normal (NSum (List.rev (List.sort mon_order poly)))
+  (*let normalize poly = 
+    let coefs = poly.coefs in
+    let monicsl = fst (List.split (BatHashtbl.to_list poly.coefs)) in
+    let monics = List.fold_left (fun tree m -> Base.Avltree.add tree ~replace:true ~compare:!M.ord ~added:(ref true) ~key:m ~data:0) (Base.Avltree.empty) monicsl in
+    {coefs; monics}*)
 
-  let from_mons l = normalize (NSum l)
+  let from_mon_list (l : M.mon list) : poly = 
+    let folder acc (c, m) = 
+      BatHashtbl.add acc m c;
+      acc
+    in
+    let coefs = List.fold_left folder (BatHashtbl.create 20) l in
+    coefs
 
-  let lt (NSum poly) = List.hd poly
-
-  let is_zero p = 
-    M.is_zero (lt p)
-
-  let is_const p = M.is_const (lt p)
+  (*let lt (mons : poly) = 
+    match Base.Avltree.first mons.monics with
+    | None -> M.zero
+    | Some (m, _) -> 
+      BatHashtbl.find mons.coefs m, m*)
+      
 
   (*let lm poly = M.get_monic_mon (lt poly)*)
 
-  let lc poly = fst (lt poly)
+  (*let lc poly = fst (lt poly)*)
 
   (*let monomial_to_string mon = 
     let (is_neg, mons) = mon_to_string mon in
     if is_neg then "-" ^ mons
     else mons*)
   
-  let to_string (NSum p) = 
-    let folder (acc, first) (is_neg, m_s) =
-      if first && is_neg then "-" ^ m_s, false
-      else if first then m_s, false
-      else if is_neg then acc ^ " - " ^ m_s, false
-      else acc ^ " + " ^ m_s, false
-    in
-    fst (List.fold_left folder ("", true) (List.map M.mon_to_string p))
+  let to_string (p : poly) = 
+    if BatHashtbl.is_empty p then "0"
+    else
+      let folder (acc, first) (is_neg, m_s) =
+        if first && is_neg then "-" ^ m_s, false
+        else if first then m_s, false
+        else if is_neg then acc ^ " - " ^ m_s, false
+        else acc ^ " + " ^ m_s, false
+      in
+      let mon_list = List.rev (List.sort mon_order (List.map (fun (a, b) -> (b, a)) (BatHashtbl.to_list p))) in
+      fst (List.fold_left folder ("", true) (List.map M.mon_to_string mon_list))
 
-  let ppm f m = Format.pp_print_string f (to_string (NSum [m]))
+  let ppm f m = 
+    let (is_neg, mon_string) = M.mon_to_string m in
+    let str = if is_neg then "-" ^ mon_string
+      else mon_string
+    in
+    Format.pp_print_string f str
 
   let ppmm f mm = Format.pp_print_string f (snd (M.mon_to_string (M.from_string_c "1", mm)))
 
   let pp f p = Format.pp_print_string f (to_string p); Format.print_newline ()
 
-(*  let add_mon (Coef c1, m) (Sum a) =
-    if a = [] then Sum [(Coef c1, m)]
-    else if (List.exists (fun (Coef _, m2) -> !ord m m2 = 0) a) then
-      Sum (List.map (fun (Coef c2, m2) -> if !ord m m2 = 0 then (Coef (c1 +. c2), m) else (Coef c2, m2)) a)
-    else Sum ((Coef c1, m) :: a) *)
+  let is_zero (p : poly) = 
+    if BatHashtbl.length p = 0 then true
+    else
+      let mons = get_mons p in
+      BatEnum.for_all M.is_zero mons
 
-  let add (NSum p1) (NSum p2) = 
-    let rec zip a b acc =
-      match (a, b) with
-      | ([], []) -> NSum (List.rev acc)
-      | (_, []) -> NSum ((List.rev acc) @ a)
-      | ([], _) -> NSum ((List.rev acc) @ b)
-      | (m1 :: xs, m2 :: ys) ->
-        (match (M.add_mon m1 m2) with
-        | Some res ->
-          if M.is_zero res then zip xs ys acc
-          else zip xs ys (res :: acc)
-        | None ->
-          if mon_order m1 m2 > 0 then zip xs b (m1 :: acc)
-          else zip a ys (m2 :: acc))
+  let is_const (p : poly) = 
+    if BatHashtbl.length p = 0 then true
+    else
+      let mons = get_mons p in
+      BatEnum.for_all M.is_const mons
+
+  let add_mon (p : poly) ((c1, m) : M.mon)  =
+    BatHashtbl.modify_def (M.from_string_c "0") m (fun c2 -> M.addc c1 c2) p;
+    if M.cmp (BatHashtbl.find p m) (M.from_string_c "0") = 0 then BatHashtbl.remove p m
+
+  let subtract_mon (p : poly) ((c1, m) : M.mon)  =
+    BatHashtbl.modify_def (M.from_string_c "0") m (fun c2 -> M.addc c1 (M.mulc (M.from_string_c "-1") c2)) p;
+    if M.cmp (BatHashtbl.find p m) (M.from_string_c "0") = 0 then BatHashtbl.remove p m
+
+  let addi (p1 : poly) (p2 : poly) = 
+    let iterator m2 c2 = 
+      add_mon p1 (c2, m2)
     in
-    let (NSum temp_res) = zip p1 p2 [] in
-    if List.length temp_res = 0 then NSum [M.zero]
-    else (NSum temp_res)
-  
+    BatHashtbl.iter iterator p2
 
-  let mult_mon_poly mon (NSum p2) = NSum (List.map (M.mult_mon mon) p2)
+  let add (p1 : poly) (p2 : poly) : poly = 
+    let p1c = BatHashtbl.copy p1 in
+    addi p1c p2;
+    p1c
+        
+  let mult_mon_poly mon (p : poly) : poly = 
+    if M.is_zero mon then BatHashtbl.create 20
+    else 
+      let p_enum = BatHashtbl.enum p in
+      let new_enums = BatEnum.map
+        (fun (m, c) -> 
+          let new_c, new_m = M.mult_mon mon (c, m) in
+          new_m, new_c
+        ) p_enum in
+      BatHashtbl.of_enum new_enums
+
 
   (*let mult_n (N (Sum p1)) (N (Sum p2)) = 
     let folder acc p2_mon = 
@@ -286,11 +329,14 @@ module MakeP (M : sig
     List.fold_left folder (N (Sum[Coef (M.from_string_c "0"), Prod[]])) p2*)
 
 
-  let mul (NSum p1_norm) (NSum p2_norm) = 
-    let folder acc p2_mon = 
-      acc @ ((List.map (fun x -> M.mult_mon p2_mon x) p1_norm))
+  let mul (p1 : poly) (p2 : poly) : poly = 
+    let acc = BatHashtbl.create ((BatHashtbl.length p1) * (BatHashtbl.length p2)) in
+    let iterator p2_mon p2_c = 
+      let monprod = mult_mon_poly (p2_c, p2_mon) p1 in
+      addi acc monprod;
     in
-    collect_terms_normal (NSum (List.fold_left folder [] p2_norm))
+    BatHashtbl.iter iterator p2;
+    acc
 
 
 
@@ -301,34 +347,49 @@ module MakeP (M : sig
     in
     aux (e - 1) p
 
-  let subsitute_mon (var, p1) mon =
+  let substitute_mon (var, p1) mon =
     let d = M.degree var (snd mon) in
-    if d = 0 then NSum [mon]
+    if d = 0 then make_poly_from_mon mon
     else
       match M.divide_mon mon (M.make_mon_from_var var d) with
-      | Some rest_mon -> mul (exp_poly p1 d) (NSum [rest_mon])
+      | Some rest_mon -> mul (exp_poly p1 d) (make_poly_from_mon rest_mon)
       | None -> failwith "Impossible"
       
 
-  let substitute (var, p1) (NSum p2) = 
-    let sub_list = List.map (subsitute_mon (var, p1)) p2 in
-    List.fold_left (fun acc p -> add acc p) (List.hd sub_list) (List.tl sub_list)
+  let substitute (var, p1) (p2 : poly) =
+    let acc = BatHashtbl.create 20 in 
+    let iterator p2m p2c = 
+      let new_p = substitute_mon (var, p1) (p2c, p2m) in
+      addi acc new_p
+    in
+    BatHashtbl.iter iterator p2;
+    acc
     
 
-  let compare (NSum p1) (NSum p2) = 
-    let rec aux a b = 
-      match (a, b) with 
-      | ([], []) -> 0
-      | ([], _) -> -1
-      | (_, []) -> 1
-      | (x :: xs, y :: ys) -> if mon_order x y = 0 then aux xs ys else mon_order x y
-    in
-    aux p1 p2
+  let compare p1 p2 = 
+    let p1s = List.sort mon_order (List.map (fun (a, b) -> (b, a)) (BatHashtbl.to_list p1)) in
+    let p2s = List.sort mon_order (List.map (fun (a, b) -> (b, a)) (BatHashtbl.to_list p2)) in
+    BatEnum.compare mon_order (BatList.enum p1s) (BatList.enum p2s)
+
+  let equal (p1 : poly) (p2 : poly) = 
+    if BatHashtbl.length p1 = BatHashtbl.length p2 then 
+      let rec aux curr_p2 = 
+        match BatEnum.get curr_p2 with
+        | None -> true
+        | Some (m, c2) ->
+          match BatHashtbl.find_option p1 m with
+          | None -> false
+          | Some c1 ->
+            if M.cmp c1 c2 = 0 then aux curr_p2
+            else false
+      in
+      aux (BatHashtbl.enum p2)
+    else false
 
 
   let subtract p1_n p2_n = 
     let neg_p2_n = mult_mon_poly M.minus_1 p2_n in
-    add p1_n neg_p2_n
+    addi p1_n neg_p2_n
   
   let lex_ord = M.lex_ord
 
