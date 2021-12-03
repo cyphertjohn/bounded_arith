@@ -31,6 +31,8 @@ module type Polynomial = sig
   (** Exponentiates a polynomial to some integer power.*)
   val exp_poly : poly -> int -> poly
 
+  val substitute_mon : string * poly -> mon -> poly
+
   (** [substitute (x, p) q] substitutes [p] for every occurrence of [x] in [q].*)
   val substitute :
     string * poly -> poly -> poly

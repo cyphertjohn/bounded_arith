@@ -347,7 +347,7 @@ module MakeP (M : sig
     in
     aux (e - 1) p
 
-  let subsitute_mon (var, p1) mon =
+  let substitute_mon (var, p1) mon =
     let d = M.degree var (snd mon) in
     if d = 0 then make_poly_from_mon mon
     else
@@ -356,13 +356,14 @@ module MakeP (M : sig
       | None -> failwith "Impossible"
       
 
-  let substitute (var, p1) (p2 : poly) = 
-    let folder p2m p2c acc = 
-      let new_p = subsitute_mon (var, p1) (p2c, p2m) in
-      addi new_p acc;
-      acc
+  let substitute (var, p1) (p2 : poly) =
+    let acc = BatHashtbl.create 20 in 
+    let iterator p2m p2c = 
+      let new_p = substitute_mon (var, p1) (p2c, p2m) in
+      addi acc new_p
     in
-    BatHashtbl.fold folder p2 (make_poly_from_mon M.zero)
+    BatHashtbl.iter iterator p2;
+    acc
     
 
   let compare p1 p2 = 

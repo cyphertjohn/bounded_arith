@@ -25,6 +25,8 @@ module type Polynomial = sig
     
   val exp_poly : poly -> int -> poly
 
+  val substitute_mon : string * poly -> mon -> poly
+
   val substitute :
     string * poly -> poly -> poly
 
@@ -426,7 +428,7 @@ module Cone(C : Sigs.Coefficient) = struct
     let mon_list = 
       match ord with
       | None -> BatList.of_enum (BatEnum.map fst (MonMap.enum mon_map))
-      | Some o -> List.sort o (BatList.of_enum (BatEnum.map fst (MonMap.enum mon_map)))
+      | Some o -> List.sort (fun a b ->(-1) * ( o a b)) (BatList.of_enum (BatEnum.map fst (MonMap.enum mon_map)))
     in
     let curr_dim = ref 0 in
     let rec generate_dims mons curr_dim_map = 
