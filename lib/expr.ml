@@ -1,5 +1,7 @@
 open Sigs.Expr
 
+type qexpr = Sigs.Q.coef expr
+
 let rec cmp a b = 
   match (a, b) with
   | (Coe a_v, Coe b_v) ->		(* O-1 *)
@@ -437,3 +439,26 @@ let rec to_string e =
   else str
 
 let pp f e = Format.pp_print_string f (to_string e)
+
+let from_const c = Coe c
+
+let from_var v i =
+  if i = 0 then Coe (Sigs.Q.from_string_c "1") 
+  else if i = 1 then Var v
+  else 
+    Pow (Var v, i)
+
+let add a b = Add [a;b]
+
+let negate a = Mult [from_const (Sigs.Q.from_string_c "-1"); a]
+
+let minus a b =
+  Add[a; negate b]
+
+let mult a b = Mult [a; b]
+
+let exp a i = Pow(a, i)
+
+let div a b = Div(a, b)
+
+let floor a = Floor a

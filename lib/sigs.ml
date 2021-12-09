@@ -12,6 +12,8 @@ module type Coefficient = sig
     val floor : coef -> coef
     val to_float : coef -> float
     val of_float : float -> coef
+    val to_zarith : coef -> Q.t
+    val of_zarith : Z.t -> coef
 end
 
 
@@ -29,6 +31,8 @@ module Q : Coefficient = struct
     let floor x = Q.of_bigint (Q.num x)
     let to_float = Q.to_float
     let of_float = Q.of_float
+    let to_zarith (x : coef) : Q.t = x
+    let of_zarith (x : Z.t) : coef = Q.make x Z.one
 end
 
 module Expr = struct

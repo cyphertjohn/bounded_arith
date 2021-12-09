@@ -25,7 +25,8 @@ let set_level lev =
 
 let log ?(level=`always) pp obj = 
   if level_leq !my_level level then
-    pp Format.std_formatter obj
+    (pp Format.std_formatter obj;
+    Format.print_flush ())
   else
     ()
 

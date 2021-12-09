@@ -7,9 +7,9 @@ module C = Poly.ConeQ
 
 module I = Poly.IdealQ
 
-module S = Map.Make(String)
+module S = BatMap.String
 
-module VS = Set.Make(String)
+module VS = BatSet.Make(String)
 
 type fun_app = Recip of (P.poly) | Floo of (P.poly)
 
@@ -210,6 +210,29 @@ let inst_floor_recip map =
   in
   S.fold folder map ([], [])
 
+(*let effective_deg_ord_as_list deg_map keep_map top_order ps = 
+  let vars = S.keys keep_map in
+  let (keep_vars, discard_vars) = BatEnum.partition (fun v -> S.find v keep_map) vars in
+  let cmp_var x y =
+    match (List.find_opt (fun (_, v) -> v = x) top_order, List.find_opt (fun (_, v) -> v = y) top_order) with
+    | None, None -> (-1) *(compare x y)
+    | Some (_, _), None -> 1
+    | None, Some (_, _) -> (-1)
+    | Some (x_ind, _), Some (y_ind, _) ->
+      compare x_ind y_ind
+  in
+  let var_ord = List.rev ((List.sort cmp_var (BatList.of_enum discard_vars)) @ (List.sort cmp_var (BatList.of_enum keep_vars))) in
+  let folder (svar_ord, svar_to_pvar_e, polys) pvar = 
+    let pedeg = match S.find_opt pvar deg_map with | None -> 1 | Some e -> e in
+    let svar = new_var () in
+    let svar_edeg = P.from_var_pow svar pedeg in
+    let sub_ps = List.map (P.substitute (pvar, svar_edeg)) polys in
+    svar :: svar_ord, S.add svar (pvar, pedeg) svar_to_pvar_e, sub_ps
+  in
+  let rord, svar_to_pvar, subps = List.fold_left folder ([], S.empty, ps) var_ord in
+  (var_ord, List.rev rord, svar_to_pvar, subps)*)
+
+    
 
 let effective_deg_ord deg_map keep_map pure_vars top_order a b =
   let a_vars = P.get_vars_m a in
@@ -374,10 +397,18 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
   let iteration t_map tp equatio ineq =
     let deg_map, top_order = calc_deg_map t_map in
     let keep_map = BatEnum.fold keep_folder (calc_keep_vars t_map vars_to_keep) (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (tp::equatio @ ineq)))) in
+    (*let (old_vord, vord, svar_to_pvar, ps) = effective_deg_ord_as_list deg_map keep_map top_order equatio in
+    Log.log_line_s ~level:`trace "Calculated effective degree as list";
+    Log.log ~level:`trace (Format.pp_print_list Format.pp_print_string) old_vord;
+    let f_ideal = I.make_ideal_f vord ps in
+    Log.log_line_s ~level:`trace "Computed ideal";
+    Log.log ~level:`trace I.ppi f_ideal;
+    let new_ideal = I.sub_faugere_ideal_to_ideal f_ideal svar_to_pvar old_vord in*)
     let new_ideal = I.make_ideal (effective_deg_ord deg_map keep_map pure_vars top_order) equatio in
     Log.log ~level:`debug ppmap t_map;
     Log.log_s ~level:`debug "Curr t: ";
     Log.log ~level:`debug P.pp tp;
+    Log.log_line_s ~level:`debug "";
     Log.log ~level:`debug I.ppi new_ideal;
     update_map new_ideal t_map tp (I.get_generators new_ideal) ineq
   in

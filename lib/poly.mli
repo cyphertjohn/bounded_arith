@@ -103,6 +103,11 @@ module type Ideal = sig
     (** Initialize an ideal with a given monomial order and set of generators.*)
     val make_ideal : (monic_mon -> monic_mon -> int) -> poly list -> ideal
 
+    (** Make a polynomial using Faugere with a degrevlex ordering. *)
+    val make_ideal_f : string list -> poly list -> ideal
+
+    val sub_faugere_ideal_to_ideal : ideal -> (string * int) BatMap.String.t -> string list -> ideal
+
     (** Test whether a polynomial is a member of the ideal. *)
     val mem : poly -> ideal -> bool
 

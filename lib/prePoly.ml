@@ -15,6 +15,16 @@ module MakeMon (C : Sigs.Coefficient) = struct
 
   let mon_from_coef c = (C.from_string_c c, zero_mon)
 
+  let make_mon_from_faugere_mon vars (c, elist) : mon = 
+    let vars_sort = List.sort compare vars in
+    let folder acc v e = 
+      if e > 0 then 
+        (v, e) :: acc
+      else acc
+    in
+    let monic = List.rev (List.fold_left2 folder [] vars_sort elist) in
+    C.of_zarith c, monic
+
   let zero = mon_from_coef "0"
 
   let minus_1 = mon_from_coef "-1"
@@ -153,6 +163,7 @@ module MakeP (M : sig
               include Sigs.Coefficient
               type monic_mon
               type mon = coef * monic_mon
+              val make_mon_from_faugere_mon : string list -> Z.t * (int list) -> mon
               val make_mon_from_coef : coef -> mon
               val make_mon_from_var : string -> int -> mon
               val is_zero : mon -> bool
@@ -273,11 +284,28 @@ module MakeP (M : sig
     let str = if is_neg then "-" ^ mon_string
       else mon_string
     in
-    Format.pp_print_string f str
+    Format.pp_open_hbox f (); Format.pp_print_string f str; Format.pp_close_box f ()
 
-  let ppmm f mm = Format.pp_print_string f (snd (M.mon_to_string (M.from_string_c "1", mm)))
+  let ppmm f mm = Format.pp_open_hbox f (); Format.pp_print_string f (snd (M.mon_to_string (M.from_string_c "1", mm))); Format.pp_close_box f ()
 
-  let pp f p = Format.pp_print_string f (to_string p); Format.print_newline ()
+  let pp f p = 
+    if BatHashtbl.is_empty p then (Format.pp_open_hbox f (); Format.pp_print_string f "0"; Format.pp_close_box f ())
+    else
+      (let mon_list = List.rev (List.sort mon_order (List.map (fun (a, b) -> (b, a)) (BatHashtbl.to_list p))) in
+      Format.pp_open_box f 0;
+      let first_mon = List.hd mon_list in
+      let is_fm_neg, fm_str = M.mon_to_string first_mon in
+      if is_fm_neg then Format.pp_print_string f ("-" ^ fm_str)
+      else Format.pp_print_string f fm_str;
+      let print_mon m = 
+        let is_neg, m_str = M.mon_to_string m in
+        if is_neg then (Format.pp_print_string f " -"; Format.pp_print_space f ())
+        else (Format.pp_print_string f " +"; Format.pp_print_space f ());
+        Format.pp_print_string f m_str
+      in
+      List.iter print_mon (List.tl mon_list);
+      Format.pp_close_box f ()
+      )
 
   let is_zero (p : poly) = 
     if BatHashtbl.length p = 0 then true
