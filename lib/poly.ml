@@ -88,9 +88,9 @@ module type Ideal = sig
 
     val make_ideal : (monic_mon -> monic_mon -> int) -> poly list -> ideal
 
-    val make_ideal_f : string list -> poly list -> ideal
+    (*val make_ideal_f : string list -> poly list -> ideal
 
-    val sub_faugere_ideal_to_ideal : ideal -> (string * int) BatMap.String.t -> string list -> ideal
+    val sub_faugere_ideal_to_ideal : ideal -> (string * int) BatMap.String.t -> string list -> ideal*)
 
     val mem : poly -> ideal -> bool
 
@@ -316,7 +316,7 @@ module Ideal (C : Sigs.Coefficient) = struct
     else 
       improved_buchberger ord normal
   
-  let make_grevlex_from_list l m1 m2 = 
+  (*let make_grevlex_from_list l m1 m2 = 
     let m1d = List.map (fun v -> Mon.degree v m1) l in
     let m2d = List.map (fun v -> Mon.degree v m2) l in
     let totm1, totm2 = List.fold_left (+) 0 m1d, List.fold_left (+) 0 m2d in
@@ -378,6 +378,7 @@ module Ideal (C : Sigs.Coefficient) = struct
       let sub_polys = List.map (fun p -> make_sorted_poly ord (poly_sub (fst p))) ps in
       {basis = I sub_polys; ord}
      
+*)
 
   let mem p i =
     match i.basis with

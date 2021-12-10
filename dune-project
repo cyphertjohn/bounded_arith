@@ -17,7 +17,5 @@
    (batteries :build)
    (ctypes :build)
    (ctypes-foreign :build)
-   (faugere :build)
-   (faugere-zarith :build)
  )
 )
