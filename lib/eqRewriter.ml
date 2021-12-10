@@ -22,19 +22,21 @@ type fun_app = Recip of (P.poly) | Floo of (P.poly)
   Log.log_line ~level:`trace ""*)
 
 let ppmap f term_map = 
-  let var_map_to_string var_map = 
-    let mapping_to_string v fun_map acc = 
-      let map_str =
-        match fun_map with
-        | Recip poly -> v ^ " -> " ^ "(" ^ (P.to_string poly) ^ ")^-1"
-        | Floo poly -> v ^ " -> " ^ "floor(" ^ (P.to_string poly) ^ ")"
-      in
-      map_str :: acc
-    in
-    String.concat "\n" (S.fold mapping_to_string var_map [])
+  Format.pp_open_box f 0;
+  Format.pp_print_string f "Variable map:";
+  Format.pp_print_break f 1 4;
+  Format.pp_open_vbox f 0;
+  let ppvar_map fo (v, fun_appl) = 
+    Format.pp_open_box fo 0;
+    Format.pp_print_string fo (v ^ " ->");
+    Format.pp_print_break fo 1 4;
+    (match fun_appl with
+    | Recip poly -> Format.pp_print_string fo "("; P.pp fo poly; Format.pp_print_string fo ")^-1"
+    | Floo poly -> Format.pp_print_string fo "floor("; P.pp fo poly; Format.pp_print_string fo ")");
+    Format.pp_close_box fo ()
   in
-  Format.pp_print_string f ("Variable map:\n" ^ (var_map_to_string term_map));
-  Format.print_newline ()
+  Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_custom_break fo ~fits:(";", 1, "") ~breaks:("", 0, "")) ppvar_map f (S.bindings term_map);
+  Format.pp_close_box f (); Format.pp_close_box f ()
 
 (*let log_polys ps = 
   Log.log_line ~level:`debug ("Curr Polys");
@@ -210,7 +212,7 @@ let inst_floor_recip map =
   in
   S.fold folder map ([], [])
 
-(*let effective_deg_ord_as_list deg_map keep_map top_order ps = 
+let effective_deg_ord_as_list deg_map keep_map top_order ps = 
   let vars = S.keys keep_map in
   let (keep_vars, discard_vars) = BatEnum.partition (fun v -> S.find v keep_map) vars in
   let cmp_var x y =
@@ -230,7 +232,7 @@ let inst_floor_recip map =
     svar :: svar_ord, S.add svar (pvar, pedeg) svar_to_pvar_e, sub_ps
   in
   let rord, svar_to_pvar, subps = List.fold_left folder ([], S.empty, ps) var_ord in
-  (var_ord, List.rev rord, svar_to_pvar, subps)*)
+  (var_ord, List.rev rord, svar_to_pvar, subps)
 
     
 
@@ -397,19 +399,16 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
   let iteration t_map tp equatio ineq =
     let deg_map, top_order = calc_deg_map t_map in
     let keep_map = BatEnum.fold keep_folder (calc_keep_vars t_map vars_to_keep) (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (tp::equatio @ ineq)))) in
-    (*let (old_vord, vord, svar_to_pvar, ps) = effective_deg_ord_as_list deg_map keep_map top_order equatio in
-    Log.log_line_s ~level:`trace "Calculated effective degree as list";
-    Log.log ~level:`trace (Format.pp_print_list Format.pp_print_string) old_vord;
-    let f_ideal = I.make_ideal_f vord ps in
-    Log.log_line_s ~level:`trace "Computed ideal";
-    Log.log ~level:`trace I.ppi f_ideal;
-    let new_ideal = I.sub_faugere_ideal_to_ideal f_ideal svar_to_pvar old_vord in*)
-    let new_ideal = I.make_ideal (effective_deg_ord deg_map keep_map pure_vars top_order) equatio in
-    Log.log ~level:`debug ppmap t_map;
+    let (old_vord, vord, svar_to_pvar, ps) = effective_deg_ord_as_list deg_map keep_map top_order equatio in
+    Log.log ~level:`debug ppmap (Some t_map);
     Log.log_s ~level:`debug "Curr t: ";
-    Log.log ~level:`debug P.pp tp;
-    Log.log_line_s ~level:`debug "";
-    Log.log ~level:`debug I.ppi new_ideal;
+    Log.log ~level:`debug P.pp (Some tp);
+    Log.log_line_s ~level:`trace "Computed fideal";
+    let f_ideal = I.make_ideal_f vord ps in
+    Log.log ~level:`trace I.ppi (Some f_ideal);
+    let new_ideal = I.sub_faugere_ideal_to_ideal f_ideal svar_to_pvar old_vord in
+    Log.log ~level:`debug I.ppi (Some new_ideal);
+    (*let new_ideal = I.make_ideal (effective_deg_ord deg_map keep_map pure_vars top_order) equatio in*)
     update_map new_ideal t_map tp (I.get_generators new_ideal) ineq
   in
   let rec loop old_map t_map tp equations inequalities =
@@ -418,7 +417,7 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
       let keep_map = BatEnum.fold keep_folder (calc_keep_vars t_map vars_to_keep) (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (tp::equations @ inequalities)))) in
       let (inequ, impls) = inst_floor_recip t_map in
       let cone = C.make_cone ~sat:sat ~eqs:equations ~ord:(effective_deg_ord deg_map keep_map pure_vars top_order) ~ineqs:(inequalities @ inequ) ~impls:impls () in
-      Log.log ~level:`debug C.ppc cone;
+      Log.log ~level:`debug C.ppc (Some cone);
       let red_tp = C.reduce tp cone in
       let unpure_t, _ = unpurify [red_tp] t_map in
       List.hd (unpure_t)

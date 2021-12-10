@@ -8,13 +8,13 @@ let level_leq x y =
 
 let my_level = ref `always
 let log_times = ref false
-let chan = ref (stdout)
+let f = ref (Format.std_formatter)
 
 module StrMap = Map.Make(String)
 let label_map = ref StrMap.empty
 
-let set_chan ch = 
-  chan := ch
+let set_formatter fo = 
+  f := fo
 
 let set_level lev = 
   match lev with
@@ -25,32 +25,34 @@ let set_level lev =
 
 let log ?(level=`always) pp obj = 
   if level_leq !my_level level then
-    (pp Format.std_formatter obj;
-    Format.print_flush ())
+    Format.pp_print_option (fun fo o -> pp fo o; Format.pp_print_newline fo ()) !f obj
   else
     ()
 
+
 let log_s ?(level=`always) str = 
   if level_leq !my_level level then
-    Printf.fprintf !chan "%s" str
+    Format.fprintf !f "@[%s@]" str
   else
-    Printf.ifprintf !chan "%s" str;
-  Printf.fprintf !chan "%!"
+    Format.ifprintf !f "@[%s@]" str;
+  Format.pp_print_flush !f ()
       
 let log_line_s ?(level=`always) str = 
   if level_leq !my_level level then
-    Printf.fprintf !chan "%s\n" str
+    (Format.fprintf !f "@[%s@]" str;
+    Format.pp_print_newline !f ())
   else
-    Printf.ifprintf !chan "%s\n" str;
-  Printf.fprintf !chan "%!"
+    (Format.ifprintf !f "@[%s@]" str;
+    Format.pp_print_flush !f ())
+  
 
-let log_time label f arg = 
+let log_time label fu arg = 
   let start_time = Unix.gettimeofday () in
-  let res = f arg in
+  let res = fu arg in
   let tim = Unix.gettimeofday () -. start_time in
   let _ = 
-    if !log_times then Printf.fprintf !chan "%s: %f s\n" label tim
-    else Printf.ifprintf !chan "%s: %f s\n" label tim
+    if !log_times then (Format.fprintf !f "@[%s: %f s@]" label tim; Format.pp_print_newline !f ())
+    else (Format.ifprintf !f "@[%s: %f s@]" label tim; Format.pp_print_flush !f ())
   in
   res
 
@@ -60,15 +62,13 @@ let update_tim label tim =
   | Some y -> label_map := StrMap.add label (tim +. y) (StrMap.remove label !label_map)
 
 
-let log_time_cum label f arg = 
+let log_time_cum label fu arg = 
   let start_time = Unix.gettimeofday () in
-  let res = f arg in
+  let res = fu arg in
   let tim = Unix.gettimeofday () -. start_time in
   update_tim label tim;
   let _ = 
-    if !log_times then Printf.fprintf !chan "%s: %f s\n" label (StrMap.find label !label_map) 
-    else Printf.ifprintf !chan "%s: %f s\n" label tim
+    if !log_times then (Format.fprintf !f "@[%s: %f s@]" label (StrMap.find label !label_map); Format.pp_print_newline !f ())
+    else (Format.ifprintf !f "@[%s: %f s@]" label tim; Format.pp_print_flush !f ())
   in
   res
-
-let close () = close_out !chan
