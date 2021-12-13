@@ -159,6 +159,7 @@ module Ideal (C : Sigs.Coefficient) = struct
       in
       foo lis 0
     in
+    let reduction_occurred = ref false in
     let rec aux p mults (r : sorted_poly) = 
       (*Log.log_s ~level:`trace "Division iteration\nDivisor: ";
       Log.log ~level:`trace pp (fst p);
@@ -175,11 +176,12 @@ module Ideal (C : Sigs.Coefficient) = struct
           add_mon (fst r) ltp;
           aux (fst p, new_pmons) mults (fst r, (snd r) @ [snd ltp])
         | Some (new_mon, i) ->
+          reduction_occurred := true;
           subtract (fst p) (mult_mon_poly new_mon (fst (List.nth divisors i)));
           List.iteri (fun j x -> if j = i then add_mon x new_mon) mults;
           aux (make_sorted_poly ord (fst p)) mults r
     in
-    aux f (List.map (fun _ -> (make_poly_from_mon Mon.zero)) divisors) ((make_poly_from_mon Mon.zero), [])
+    (!reduction_occurred, aux f (List.map (fun _ -> (make_poly_from_mon Mon.zero)) divisors) ((make_poly_from_mon Mon.zero), []))
 
   let s_poly ord f g =
     let lcmlm = (Mon.from_string_c "1", Mon.lcm_of_mon (snd (lt f)) (snd (lt g))) in
@@ -251,7 +253,7 @@ module Ideal (C : Sigs.Coefficient) = struct
         else if Mon.lex_ord lcmlt (snd prod) = 0 then aux rest g (* criterion *)
         else (
           let sp = s_poly ord fi fj in
-          let (_, s) = division ord g sp in
+          let (_, (_, s)) = division ord g sp in
           if is_zero (fst s) then aux rest g
           else if is_const (fst s) then {basis=Top; ord}
           else 
@@ -276,15 +278,16 @@ module Ideal (C : Sigs.Coefficient) = struct
         Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ","; Format.pp_print_space fo ()) pp f (List.map fst basis);
         Format.pp_print_string f ">";
         Format.pp_close_box f ());
-    Format.pp_print_newline f ()
+    Format.pp_close_box f ()
 
   let pp_red f (p, basis, mults, rem) = 
     let filtered_list = List.filter_map (fun (m, (b, _)) -> if is_zero m then None else Some (m, b)) (List.combine mults basis) in
     if List.length filtered_list = 0 then ()
     else 
-      (Format.pp_open_box f 0; pp f p; Format.pp_print_string f " ="; 
+      (Format.pp_open_box f 0; pp f p; 
+      Format.pp_print_break f 1 4;
+      Format.pp_print_string f "= ";
       Format.pp_open_hvbox f 0;
-      Format.pp_print_space f (); 
       pp f rem; Format.pp_print_string f " +"; Format.pp_print_space f ();
       let pp_mb fo (m, b) = 
         Format.pp_open_box fo 0; 
@@ -294,7 +297,7 @@ module Ideal (C : Sigs.Coefficient) = struct
         Format.pp_close_box fo ()
       in
       Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_mb f filtered_list;
-      Format.pp_print_newline f ())
+      Format.pp_close_box f (); Format.pp_close_box f ())
 
   let reduce p (i : ideal) : poly = 
     match i.basis with
@@ -302,8 +305,9 @@ module Ideal (C : Sigs.Coefficient) = struct
       from_const_s "0"
     | Bot -> p
     | I basis -> 
-      let (mults, rem) = division i.ord basis (make_sorted_poly i.ord p) in
-      Log.log ~level:`trace pp_red (p, basis, mults, fst rem);
+      let (reduction_occurred, (mults, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
+      if not reduction_occurred then Log.log ~level:`trace pp_red None
+      else Log.log ~level:`trace pp_red (Some (p, basis, mults, fst rem));
       fst rem
 
 
@@ -348,7 +352,6 @@ module Ideal (C : Sigs.Coefficient) = struct
       {basis = Top; ord}
     else 
       let fpolys = List.map (convert_to_faugere lex_list) eqs in
-      Faugere_zarith.Fgb_int_zarith.set_fgb_verbosity 1;
       Faugere_zarith.Fgb_int_zarith.set_index 5000000;
       let gb = List.map (convert_from_faugere lex_list) (Faugere_zarith.Fgb_int_zarith.fgb fpolys lex_list []) in
       {basis = minimize (List.map (make_sorted_poly ord) gb); ord}
@@ -602,7 +605,7 @@ module Cone(C : Sigs.Coefficient) = struct
       Format.pp_close_box fo ()
     in
     Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_lambdas f lambda_ps;
-    Format.pp_print_newline f ()
+    Format.pp_close_box f (); Format.pp_close_box f ()
 
   let reduce_ineq ord p ineqs = 
     if List.length ineqs = 0 then p
@@ -658,7 +661,7 @@ module Cone(C : Sigs.Coefficient) = struct
         | Error _ -> find_optimal_sol (List.tl rs)
       in
       let neg_comb, rem = find_optimal_sol r_cnsts in
-      Log.log ~level:`trace pp_red (p, neg_comb, rem);
+      Log.log ~level:`trace pp_red (Some (p, neg_comb, rem));
       rem
         
   let reduce_eq p c = I.reduce p c.ideal
@@ -695,6 +698,7 @@ module Cone(C : Sigs.Coefficient) = struct
   let ppc f c = 
       Format.pp_print_string f "Cone:"; Format.pp_print_space f ();
       ppi f c.ideal;
+      Format.pp_force_newline f ();
       if List.length c.ineqs = 0 then Format.pp_print_string f "Ineqs: [0]"
       else
         Format.pp_open_hbox f ();
@@ -704,7 +708,7 @@ module Cone(C : Sigs.Coefficient) = struct
         Format.pp_open_box f 0;
         Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) pp f (List.map fst (List.hd c.ineqs));
         Format.pp_print_string f "]";
-        Format.pp_print_newline f ()
+        Format.pp_close_box f (); Format.pp_close_box f ()
 
 end
 
