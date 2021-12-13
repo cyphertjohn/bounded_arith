@@ -546,7 +546,8 @@ module Cone(C : Sigs.Coefficient) = struct
     Format.pp_close_box f (); Format.pp_close_box f ()
 
   let reduce_ineq ord p ineqs = 
-    if List.length ineqs = 0 then p
+    if is_zero p then p
+    else if List.length ineqs = 0 then p
     else 
       let dim_map, p_ineq = polys_to_dim ~ord:(Some ord) (p :: ineqs) in
       let p_dim = List.hd p_ineq in
