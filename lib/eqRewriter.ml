@@ -386,7 +386,7 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
     let deg_map, top_order = calc_deg_map t_map in
     let keep_map = BatEnum.fold keep_folder (calc_keep_vars t_map vars_to_keep) (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (tp::equatio @ ineq)))) in
     let (old_vord, vord, svar_to_pvar, ps) = effective_deg_ord_as_list deg_map keep_map top_order equatio in
-    Log.log ~level:`debug (ppmap pp_fun_app) (Some t_map);
+    Log.log ~level:`debug (ppmap pp_funapp) (Some t_map);
     Log.log_s ~level:`debug "Curr t: ";
     Log.log ~level:`debug P.pp (Some tp);
     Log.log_s ~level:`trace "Vord: ";
