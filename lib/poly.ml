@@ -320,68 +320,6 @@ module Ideal (C : Sigs.Coefficient) = struct
     else 
       improved_buchberger ord normal
   
-  (*let make_grevlex_from_list l m1 m2 = 
-    let m1d = List.map (fun v -> Mon.degree v m1) l in
-    let m2d = List.map (fun v -> Mon.degree v m2) l in
-    let totm1, totm2 = List.fold_left (+) 0 m1d, List.fold_left (+) 0 m2d in
-    if totm1 = totm2 then 
-      (
-      try (-1) * (List.find ((<>) 0) (List.rev (List.map2 (-) m1d m2d)))
-      with Not_found -> 0)
-    else Int.compare totm1 totm2
-
-  let convert_to_faugere l (p : poly) = 
-    let clearing_denom = 
-      BatHashtbl.fold (fun _ c acc  -> Z.lcm (Q.den (Mon.to_zarith c)) acc) p Z.one in
-    let mon_to_faugere (m, c) = 
-      let md = List.map (fun v -> Mon.degree v m) l in
-      let new_c = Q.num (Q.mul (Mon.to_zarith c) (Q.of_bigint clearing_denom)) in
-      new_c, md
-    in
-    List.map mon_to_faugere (BatHashtbl.to_list p)
-
-  let convert_from_faugere l p = 
-    from_mon_list (List.map (Mon.make_mon_from_faugere_mon l) p)
-
-  let make_ideal_f (lex_list : string list) eqs : ideal = 
-    let normal = List.filter (fun p -> not (is_zero p)) eqs in
-    let ord = make_grevlex_from_list lex_list in
-    if List.length normal = 0 || List.for_all is_zero normal then 
-      {basis = Bot; ord}
-    else if List.exists is_const normal then 
-      {basis = Top; ord}
-    else 
-      let fpolys = List.map (convert_to_faugere lex_list) eqs in
-      Faugere_zarith.Fgb_int_zarith.set_index 5000000;
-      let gb = List.map (convert_from_faugere lex_list) (Faugere_zarith.Fgb_int_zarith.fgb fpolys lex_list []) in
-      {basis = minimize (List.map (make_sorted_poly ord) gb); ord}
-
-  let sub_faugere_ideal_to_ideal i svar_to_pvar vord = 
-    match i.basis with
-    | Top -> {basis = Top; ord = make_grevlex_from_list vord}
-    | Bot -> {basis = Bot; ord = make_grevlex_from_list vord}
-    | I ps ->
-      let ord = make_grevlex_from_list vord in
-      let mon_sub m = 
-        let c, monic = fst m, snd m in 
-        let folder acc v = 
-          let vdeg = get_degree v monic in
-          let (old_var, eff_deg) = BatMap.String.find v svar_to_pvar in
-          if vdeg mod eff_deg = 0 then 
-            let new_deg = vdeg / eff_deg in
-            Mon.mult_mon (Mon.make_mon_from_var old_var new_deg) acc
-          else failwith "Not sure how to do this subtitution"
-        in
-        BatEnum.fold folder (Mon.make_mon_from_coef c) (get_vars_m monic)
-      in
-      let poly_sub p = 
-        let mons = get_mons p in
-        from_mon_list (BatList.of_enum (BatEnum.map mon_sub mons))
-      in
-      let sub_polys = List.map (fun p -> make_sorted_poly ord (poly_sub (fst p))) ps in
-      {basis = I sub_polys; ord}
-     
-*)
 
   let mem p i =
     match i.basis with
