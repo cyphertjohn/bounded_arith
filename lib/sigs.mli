@@ -38,6 +38,10 @@ module type Coefficient = sig
     val to_float : coef -> float
 
     val of_float : float -> coef
+
+    val to_zarith : coef -> Q.t
+
+    val of_zarith : Z.t -> coef
 end
 
 (**Q is an implementation of rational arithmetic using zarith. *)

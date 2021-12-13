@@ -8,17 +8,21 @@ module type Polynomial = sig
   type poly
 
   (** Get the monomials of a polynomial *)
-  val get_mons : poly -> mon list
+  val get_mons : poly -> mon BatEnum.t
 
   (** Get the degree of a variable in a given monomial *)
   val get_degree : string -> monic_mon -> int
 
   (** Get the vars of the monomial *)
-  val get_vars_m : monic_mon -> string list
+  val get_vars_m : monic_mon -> string BatEnum.t
 
   (**Computes the sum of two polynomials. *)
   val add :
     poly -> poly -> poly
+
+  (**Computes the sum of two polynomials, and store the result in the first argument. *)
+  val addi :
+    poly -> poly -> unit
 
   (** Multiplies two polynomials. *)
   val mul :
@@ -39,6 +43,9 @@ module type Polynomial = sig
 
   (** Polynomial comparison. The result does not correspond to any arithmetic order.*)
   val compare : poly -> poly -> int
+
+  (** Cheaper equality testing than compare. *)
+  val equal : poly -> poly -> bool
     
   (** Parses a string as a polynomial. *)
   val from_string : string -> poly
@@ -59,13 +66,13 @@ module type Polynomial = sig
   val to_string : poly -> string
 
   (** Gets the variables from a polynomial *)
-  val get_vars : poly -> string list
+  val get_vars : poly -> string BatEnum.t
 
   (** Initialize a polynomial from a constant *)
   val from_const : coef -> poly
 
-  (** Normalizes a polynomial. Only used when passing polynomials between modules, where one module might use a different order. *)
-  val normalize : poly -> poly
+  (*(** Normalizes a polynomial. Only used when passing polynomials between modules, where one module might use a different order. *)
+  val normalize : poly -> poly*)
 end
 
 (** A functor for manipulating polynomials whose coeficients functions are given as input. *)
@@ -95,6 +102,11 @@ module type Ideal = sig
 
     (** Initialize an ideal with a given monomial order and set of generators.*)
     val make_ideal : (monic_mon -> monic_mon -> int) -> poly list -> ideal
+
+    (*(** Make a polynomial using Faugere with a degrevlex ordering. *)
+    val make_ideal_f : string list -> poly list -> ideal
+
+    val sub_faugere_ideal_to_ideal : ideal -> (string * int) BatMap.String.t -> string list -> ideal*)
 
     (** Test whether a polynomial is a member of the ideal. *)
     val mem : poly -> ideal -> bool
