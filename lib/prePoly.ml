@@ -16,13 +16,12 @@ module MakeMon (C : Sigs.Coefficient) = struct
   let mon_from_coef c = (C.from_string_c c, zero_mon)
 
   let make_mon_from_faugere_mon vars (c, elist) : mon = 
-    let vars_sort = List.sort compare vars in
     let folder acc v e = 
       if e > 0 then 
         (v, e) :: acc
       else acc
     in
-    let monic = List.rev (List.fold_left2 folder [] vars_sort elist) in
+    let monic = List.sort (fun (av, _) (bv, _)-> compare av bv)(List.fold_left2 folder [] vars elist) in
     C.of_zarith c, monic
 
   let zero = mon_from_coef "0"
@@ -175,6 +174,7 @@ module MakeP (M : sig
               val divide_mon : mon -> mon -> mon option
               val lcm_of_mon : monic_mon -> monic_mon -> monic_mon
               val degree : string -> monic_mon -> int
+              val total_deg : monic_mon -> int
               val get_vars : monic_mon -> string BatEnum.t
               val mon_to_string : mon -> bool * string
               val is_const : mon -> bool

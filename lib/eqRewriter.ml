@@ -13,6 +13,11 @@ module VS = BatSet.Make(String)
 
 type fun_app = Recip of (P.poly) | Floo of (P.poly)
 
+let pp_fun_app f fun_appl =
+  match fun_appl with
+  | Recip poly -> Format.pp_print_string f "("; P.pp f poly; Format.pp_print_string f ")^-1"
+  | Floo poly -> Format.pp_print_string f "floor("; P.pp f poly; Format.pp_print_string f ")"
+
 
 (*let log_keep_map keep_map =
   let mapping_to_string v keep acc = (v ^ " -> " ^ (string_of_bool keep)) :: acc in
@@ -21,18 +26,16 @@ type fun_app = Recip of (P.poly) | Floo of (P.poly)
   Log.log_line ~level:`trace map_string;
   Log.log_line ~level:`trace ""*)
 
-let ppmap f term_map = 
+let ppmap ppa f term_map = 
   Format.pp_open_box f 0;
   Format.pp_print_string f "Variable map:";
   Format.pp_print_break f 1 4;
   Format.pp_open_vbox f 0;
-  let ppvar_map fo (v, fun_appl) = 
+  let ppvar_map fo (v, a) = 
     Format.pp_open_box fo 0;
     Format.pp_print_string fo (v ^ " ->");
     Format.pp_print_break fo 1 4;
-    (match fun_appl with
-    | Recip poly -> Format.pp_print_string fo "("; P.pp fo poly; Format.pp_print_string fo ")^-1"
-    | Floo poly -> Format.pp_print_string fo "floor("; P.pp fo poly; Format.pp_print_string fo ")");
+    ppa f a;
     Format.pp_close_box fo ()
   in
   Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_custom_break fo ~fits:(";", 1, "") ~breaks:("", 0, "")) ppvar_map f (S.bindings term_map);
@@ -212,6 +215,8 @@ let inst_floor_recip map =
   in
   S.fold folder map ([], [])
 
+
+
 let effective_deg_ord_as_list deg_map keep_map top_order ps = 
   let vars = S.keys keep_map in
   let (keep_vars, discard_vars) = BatEnum.partition (fun v -> S.find v keep_map) vars in
@@ -223,7 +228,7 @@ let effective_deg_ord_as_list deg_map keep_map top_order ps =
     | Some (x_ind, _), Some (y_ind, _) ->
       compare x_ind y_ind
   in
-  let var_ord = List.rev ((List.sort cmp_var (BatList.of_enum discard_vars)) @ (List.sort cmp_var (BatList.of_enum keep_vars))) in
+  let var_ord = (List.sort cmp_var (BatList.of_enum keep_vars)) @ (List.sort cmp_var (BatList.of_enum discard_vars)) in
   let folder (svar_ord, svar_to_pvar_e, polys) pvar = 
     let pedeg = match S.find_opt pvar deg_map with | None -> 1 | Some e -> e in
     let svar = new_var () in
@@ -400,9 +405,18 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
     let deg_map, top_order = calc_deg_map t_map in
     let keep_map = BatEnum.fold keep_folder (calc_keep_vars t_map vars_to_keep) (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (tp::equatio @ ineq)))) in
     let (old_vord, vord, svar_to_pvar, ps) = effective_deg_ord_as_list deg_map keep_map top_order equatio in
-    Log.log ~level:`debug ppmap (Some t_map);
+    Log.log ~level:`debug (ppmap pp_fun_app) (Some t_map);
     Log.log_s ~level:`debug "Curr t: ";
     Log.log ~level:`debug P.pp (Some tp);
+    Log.log_s ~level:`trace "Vord: ";
+    Log.log ~level:`trace (Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo "; ") Format.pp_print_string) (Some vord);
+    Log.log_s ~level:`trace "old_vord: ";
+    Log.log ~level:`trace (Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo "; ") Format.pp_print_string) (Some old_vord);
+    Log.log_s ~level:`trace "Curr Eqs: ";
+    Log.log ~level:`trace (Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) P.pp) (Some equatio);
+    Log.log_s ~level:`trace "Sub Eqs: ";
+    Log.log ~level:`trace (Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) P.pp) (Some ps);
+    Log.log ~level:`trace (ppmap (fun f (v, d) -> Format.pp_print_string f ("(" ^ v ^ ", "); Format.pp_print_int f d; Format.pp_print_string f ")")) (Some svar_to_pvar);
     Log.log_line_s ~level:`trace "Computed fideal";
     let f_ideal = I.make_ideal_f vord ps in
     Log.log ~level:`trace I.ppi (Some f_ideal);

@@ -354,7 +354,8 @@ module Ideal (C : Sigs.Coefficient) = struct
       let fpolys = List.map (convert_to_faugere lex_list) eqs in
       Faugere_zarith.Fgb_int_zarith.set_index 5000000;
       let gb = List.map (convert_from_faugere lex_list) (Faugere_zarith.Fgb_int_zarith.fgb fpolys lex_list []) in
-      {basis = minimize (List.map (make_sorted_poly ord) gb); ord}
+      {basis = I (List.map (make_sorted_poly ord) gb); ord}
+      (*improved_buchberger ord (List.map (fun p -> convert_from_faugere lex_list (convert_to_faugere lex_list p)) eqs)*)
 
   let sub_faugere_ideal_to_ideal i svar_to_pvar vord = 
     match i.basis with
