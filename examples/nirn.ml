@@ -53,7 +53,7 @@ let transferXplusY = List.map from_string [
 						(* rest of calculate fee *)
 						(* "floor((totalBalance0 E18) / (supplyXYmid)) - priceAtLastFeeXY"; *)
 					(* rest of transfer x + y *)
-					(* "floor(((x+y) supplyXYmid) / (totalBalanceXYmid)) - sharesXY"; *)
+					"floor(((x+y) supplyXYmid) / (totalBalanceXYmid)) - sharesXY";
 					(* mint *)
 						(* "supplyXYmid + sharesXY - supplyXY"; *)
 						"totalBalanceXYmid - totalBalanceXY"; (* "totalBalanceXYmid + sharesXY - totalBalanceXY"; *)
