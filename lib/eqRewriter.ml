@@ -13,48 +13,28 @@ module VS = BatSet.Make(String)
 
 type fun_app = Recip of (P.poly) | Floo of (P.poly)
 
-let pp_fun_app f fun_appl =
+let pp_funapp f fun_appl = 
+  Format.pp_open_box f 0;
   match fun_appl with
-  | Recip poly -> Format.pp_print_string f "("; P.pp f poly; Format.pp_print_string f ")^-1"
-  | Floo poly -> Format.pp_print_string f "floor("; P.pp f poly; Format.pp_print_string f ")"
+  | Recip p -> Format.pp_print_string f "("; P.pp f p; Format.pp_print_string f ")^-1"
+  | Floo p -> Format.pp_print_string f "floor("; P.pp f p; Format.pp_print_string f ")";
+  Format.pp_close_box f ()
 
-
-(*let log_keep_map keep_map =
-  let mapping_to_string v keep acc = (v ^ " -> " ^ (string_of_bool keep)) :: acc in
-  let map_string = String.concat "\n" (S.fold mapping_to_string keep_map []) in
-  Log.log_line ~level:`trace "Keep Map";
-  Log.log_line ~level:`trace map_string;
-  Log.log_line ~level:`trace ""*)
-
-let ppmap ppa f term_map = 
+let ppmap pp f term_map = 
   Format.pp_open_box f 0;
   Format.pp_print_string f "Variable map:";
   Format.pp_print_break f 1 4;
   Format.pp_open_vbox f 0;
-  let ppvar_map fo (v, a) = 
+  let ppvar_map fo (v, value) = 
     Format.pp_open_box fo 0;
     Format.pp_print_string fo (v ^ " ->");
     Format.pp_print_break fo 1 4;
-    ppa f a;
+    pp f value;
     Format.pp_close_box fo ()
   in
   Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_custom_break fo ~fits:(";", 1, "") ~breaks:("", 0, "")) ppvar_map f (S.bindings term_map);
   Format.pp_close_box f (); Format.pp_close_box f ()
 
-(*let log_polys ps = 
-  Log.log_line ~level:`debug ("Curr Polys");
-  Log.log_line ~level:`debug (String.concat "\n" (List.map P.to_string ps));
-  Log.log_line ~level:`debug ""
-
-let log_ineqs ps = 
-  Log.log_line ~level:`debug ("Curr Ineqs");
-  Log.log_line ~level:`debug (String.concat "\n" (List.map P.to_string ps));
-  Log.log_line ~level:`debug ""
-
-let log_top_order top = 
-  Log.log_line ~level:`trace ("Top order");
-  Log.log_line ~level:`trace ("[ " ^ (String.concat ";" (List.map (fun (i, v) -> "(" ^ (string_of_int i) ^ ", " ^ v ^ ")") top)) ^ "]\n");
-  Log.log_line ~level:`trace ("")*)
 
 let sub_fun_app_var var_to_replace poly_to_replace_with term = 
   match term with
@@ -131,7 +111,7 @@ let calc_keep_vars term_map vars_to_keep =
         let keep_variable v_sub =
           if S.mem v_sub !ref_acc then S.find v_sub !ref_acc
           else 
-            let () = (if not (S.mem v_sub term_map) && (List.mem v_sub vars_to_keep) then 
+            let () = (if (not (S.mem v_sub term_map)) && (List.mem v_sub vars_to_keep) then 
               ref_acc := S.add v_sub true !ref_acc
             else if not (S.mem v_sub term_map) then 
               ref_acc := S.add v_sub false !ref_acc
@@ -140,7 +120,8 @@ let calc_keep_vars term_map vars_to_keep =
               ref_acc := new_acc) in
             S.find v_sub !ref_acc
         in
-        let keep = BatEnum.for_all keep_variable vars in
+        let list_keep = List.map keep_variable (BatList.of_enum vars) in
+        let keep = List.for_all (fun a -> a) list_keep in
         S.add v keep !ref_acc
   in
   let res = S.fold aux term_map S.empty in
@@ -422,7 +403,6 @@ let rewrite ?sat:(sat=3) eqs ineqs vars_to_keep t =
     Log.log ~level:`trace I.ppi (Some f_ideal);
     let new_ideal = I.sub_faugere_ideal_to_ideal f_ideal svar_to_pvar old_vord in
     Log.log ~level:`debug I.ppi (Some new_ideal);
-    (*let new_ideal = I.make_ideal (effective_deg_ord deg_map keep_map pure_vars top_order) equatio in*)
     update_map new_ideal t_map tp (I.get_generators new_ideal) ineq
   in
   let rec loop old_map t_map tp equations inequalities =
