@@ -88,9 +88,7 @@ module type Ideal = sig
 
     val make_ideal : (monic_mon -> monic_mon -> int) -> poly list -> ideal
 
-    val make_ideal_f : string list -> poly list -> ideal
-
-    val sub_faugere_ideal_to_ideal : ideal -> (string * int) BatMap.String.t -> string list -> ideal
+    val make_ideal_f : int BatMap.String.t -> bool BatMap.String.t -> (int * string) list -> poly list -> ideal
 
     val mem : poly -> ideal -> bool
 
@@ -316,9 +314,10 @@ module Ideal (C : Sigs.Coefficient) = struct
     else 
       improved_buchberger ord normal
   
-  let make_grevlex_from_list bk1 bk2 m1 m2 = 
-    let m1d_bk_1 = List.map (fun v -> Mon.degree v m1) bk1 in
-    let m2d_bk_1 = List.map (fun v -> Mon.degree v m2) bk1 in
+  let make_grevlex_from_list deg_map bk1 bk2 m1 m2 = 
+    let effective_deg v = match BatMap.String.find_opt v deg_map with None -> 1 | Some e -> e in
+    let m1d_bk_1 = List.map (fun v -> effective_deg v * Mon.degree v m1) bk1 in
+    let m2d_bk_1 = List.map (fun v -> effective_deg v * Mon.degree v m2) bk1 in
     let m1bk1tot, m2bk1tot = List.fold_left (+) 0 m1d_bk_1, List.fold_left (+) 0 m2d_bk_1 in
     if m1bk1tot = m2bk1tot then
       let grevlex_bk1 = 
@@ -326,8 +325,8 @@ module Ideal (C : Sigs.Coefficient) = struct
         with Not_found -> 0 in
       if grevlex_bk1 <> 0 then grevlex_bk1
       else
-        let m1d_bk_2 = List.map (fun v -> Mon.degree v m1) bk2 in
-        let m2d_bk_2 = List.map (fun v -> Mon.degree v m2) bk2 in
+        let m1d_bk_2 = List.map (fun v -> effective_deg v * Mon.degree v m1) bk2 in
+        let m2d_bk_2 = List.map (fun v -> effective_deg v * Mon.degree v m2) bk2 in
         let m1bk2tot, m2bk2tot = List.fold_left (+) 0 m1d_bk_2, List.fold_left (+) 0 m2d_bk_2 in
         if m1bk2tot = m2bk2tot then
           try (List.find ((<>) 0) (List.rev (List.map2 (-) m1d_bk_2 m2d_bk_2)))
@@ -398,7 +397,7 @@ module Ideal (C : Sigs.Coefficient) = struct
   let make_ideal_f deg_map keep_map top_ord eqs : ideal = 
     let normal = List.filter (fun p -> not (is_zero p)) eqs in
     let ((orig_vord_bk1, orig_vord_bk2), (vord_bk1, vord_bk2), svar_to_pvar, subps) = effective_deg_ord_as_list deg_map keep_map top_ord normal in
-    let ord = make_grevlex_from_list orig_vord_bk1 orig_vord_bk2 in
+    let ord = make_grevlex_from_list deg_map orig_vord_bk1 orig_vord_bk2 in
     if List.length normal = 0 || List.for_all is_zero normal then 
       {basis = Bot; ord}
     else if List.exists is_const normal then 
@@ -471,6 +470,8 @@ end
 module type Cone = sig 
     type cone
 
+    type ideal
+
     type poly
 
     type monic_mon
@@ -480,6 +481,8 @@ module type Cone = sig
     val (=>) : poly -> poly -> impl
 
     val make_cone : ?sat:int -> ?ord:(monic_mon -> monic_mon -> int) -> ?eqs:poly list -> ?ineqs:poly list -> ?impls: impl list -> unit -> cone
+
+    val make_cone_i : ?sat:int -> ?ineqs:poly list -> ?impls:impl list -> ideal -> cone
 
     val is_non_neg : poly -> cone -> bool
 

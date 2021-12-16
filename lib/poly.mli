@@ -84,7 +84,7 @@ module PQ :
   sig 
     include (Polynomial with type coef = Sigs.Q.coef)
 
-    val pp : Format.formatter -> poly -> unit [@@ocaml.toplevel_printer]
+    val pp : ?ord:(monic_mon -> monic_mon -> int) -> Format.formatter -> poly -> unit [@@ocaml.toplevel_printer]
 
     val ppm : Format.formatter -> mon -> unit [@@ocaml.toplevel_printer]
 
@@ -104,9 +104,7 @@ module type Ideal = sig
     val make_ideal : (monic_mon -> monic_mon -> int) -> poly list -> ideal
 
     (** Make a polynomial using Faugere with a degrevlex ordering. *)
-    val make_ideal_f : string list -> poly list -> ideal
-
-    val sub_faugere_ideal_to_ideal : ideal -> (string * int) BatMap.String.t -> string list -> ideal
+    val make_ideal_f : int BatMap.String.t -> bool BatMap.String.t -> (int * string) list -> poly list -> ideal
 
     (** Test whether a polynomial is a member of the ideal. *)
     val mem : poly -> ideal -> bool
@@ -138,6 +136,8 @@ module type Cone = sig
     Thus, each polynomial in the cone represents a positive polynomial. *)
     type cone
 
+    type ideal
+
     type poly
 
     type monic_mon
@@ -151,6 +151,8 @@ module type Cone = sig
     (** [make_cone sat ord eq ineqs] creates a linear cone from a given monomial order [ord], a list of equations [eq], and a list of ineqs [ineqs] (assumed to be nonnegative). 
     The optional [sat] parameter will mutliply inequalities together up to the [sat] limit. Default is 1.*)
     val make_cone : ?sat:int -> ?ord:(monic_mon -> monic_mon -> int) -> ?eqs:poly list -> ?ineqs:poly list -> ?impls: impl list -> unit -> cone
+
+    val make_cone_i : ?sat:int -> ?ineqs:poly list -> ?impls:impl list -> ideal -> cone
 
     (** Tests whether it is implied that the first argument is non-negative assuming the equations and inequalities given by the cone. *)
     val is_non_neg : poly -> cone -> bool
@@ -177,7 +179,7 @@ module Cone :
 
 module ConeQ : sig
 
-  include (Cone with type poly := PQ.poly and type monic_mon := PQ.monic_mon )
+  include (Cone with type poly := PQ.poly and type monic_mon := PQ.monic_mon and type ideal := IdealQ.ideal)
 
   val ppc : Format.formatter -> cone -> unit [@@ocaml.toplevel_printer]
 
