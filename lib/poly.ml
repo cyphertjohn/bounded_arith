@@ -161,10 +161,6 @@ module Ideal (C : Sigs.Coefficient) = struct
     in
     let reduction_occurred = ref false in
     let rec aux p mults (r : sorted_poly) = 
-      (*Log.log_s ~level:`trace "Division iteration\nDivisor: ";
-      Log.log ~level:`trace pp (fst p);
-      Log.log_s ~level:`trace "Current Remainder: ";
-      Log.log ~level:`trace pp (fst r);*)
       if is_zero (fst p) then (mults, r)
       else 
         let ltp = lt p in
@@ -275,25 +271,25 @@ module Ideal (C : Sigs.Coefficient) = struct
      | I basis ->
         Format.pp_print_string f "<"; 
         Format.pp_open_box f 0;
-        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ","; Format.pp_print_space fo ()) pp f (List.map fst basis);
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ","; Format.pp_print_space fo ()) (pp ~ord:i.ord) f (List.map fst basis);
         Format.pp_print_string f ">";
         Format.pp_close_box f ());
     Format.pp_close_box f ()
 
-  let pp_red f (p, basis, mults, rem) = 
+  let pp_red ord f (p, basis, mults, rem) = 
     let filtered_list = List.filter_map (fun (m, (b, _)) -> if is_zero m then None else Some (m, b)) (List.combine mults basis) in
     if List.length filtered_list = 0 then ()
     else 
-      (Format.pp_open_box f 0; pp f p; 
+      (Format.pp_open_box f 0; (pp ~ord:ord) f p; 
       Format.pp_print_break f 1 4;
       Format.pp_print_string f "= ";
       Format.pp_open_hvbox f 0;
-      pp f rem; Format.pp_print_string f " +"; Format.pp_print_space f ();
+      (pp ~ord:ord) f rem; Format.pp_print_string f " +"; Format.pp_print_space f ();
       let pp_mb fo (m, b) = 
         Format.pp_open_box fo 0; 
-        Format.pp_print_string fo "("; pp fo m; Format.pp_print_string fo ")";
+        Format.pp_print_string fo "("; (pp ~ord:ord) fo m; Format.pp_print_string fo ")";
         Format.pp_print_break fo 1 4;
-        Format.pp_print_string fo "("; pp fo b; Format.pp_print_string fo ")";
+        Format.pp_print_string fo "("; (pp ~ord:ord) fo b; Format.pp_print_string fo ")";
         Format.pp_close_box fo ()
       in
       Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_mb f filtered_list;
@@ -306,8 +302,8 @@ module Ideal (C : Sigs.Coefficient) = struct
     | Bot -> p
     | I basis -> 
       let (reduction_occurred, (mults, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
-      if not reduction_occurred then Log.log ~level:`trace pp_red None
-      else Log.log ~level:`trace pp_red (Some (p, basis, mults, fst rem));
+      if not reduction_occurred then Log.log ~level:`trace (pp_red i.ord) None
+      else Log.log ~level:`trace (pp_red i.ord) (Some (p, basis, mults, fst rem));
       fst rem
 
 
@@ -320,15 +316,25 @@ module Ideal (C : Sigs.Coefficient) = struct
     else 
       improved_buchberger ord normal
   
-  let make_grevlex_from_list l m1 m2 = 
-    let m1d = List.map (fun v -> Mon.degree v m1) l in
-    let m2d = List.map (fun v -> Mon.degree v m2) l in
-    let totm1, totm2 = List.fold_left (+) 0 m1d, List.fold_left (+) 0 m2d in
-    if totm1 = totm2 then 
-      (
-      try (-1) * (List.find ((<>) 0) (List.rev (List.map2 (-) m1d m2d)))
-      with Not_found -> 0)
-    else Int.compare totm1 totm2
+  let make_grevlex_from_list bk1 bk2 m1 m2 = 
+    let m1d_bk_1 = List.map (fun v -> Mon.degree v m1) bk1 in
+    let m2d_bk_1 = List.map (fun v -> Mon.degree v m2) bk1 in
+    let m1bk1tot, m2bk1tot = List.fold_left (+) 0 m1d_bk_1, List.fold_left (+) 0 m2d_bk_1 in
+    if m1bk1tot = m2bk1tot then
+      let grevlex_bk1 = 
+        try (List.find ((<>) 0) (List.rev (List.map2 (-) m1d_bk_1 m2d_bk_1)))
+        with Not_found -> 0 in
+      if grevlex_bk1 <> 0 then grevlex_bk1
+      else
+        let m1d_bk_2 = List.map (fun v -> Mon.degree v m1) bk2 in
+        let m2d_bk_2 = List.map (fun v -> Mon.degree v m2) bk2 in
+        let m1bk2tot, m2bk2tot = List.fold_left (+) 0 m1d_bk_2, List.fold_left (+) 0 m2d_bk_2 in
+        if m1bk2tot = m2bk2tot then
+          try (List.find ((<>) 0) (List.rev (List.map2 (-) m1d_bk_2 m2d_bk_2)))
+          with Not_found -> 0
+        else Int.compare m1bk2tot m2bk2tot
+    else
+      Int.compare m1bk1tot m2bk1tot
 
   let convert_to_faugere l (p : poly) = 
     let clearing_denom = 
@@ -343,26 +349,91 @@ module Ideal (C : Sigs.Coefficient) = struct
   let convert_from_faugere l p = 
     from_mon_list (List.map (Mon.make_mon_from_faugere_mon l) p)
 
-  let make_ideal_f (lex_list : string list) eqs : ideal = 
+  let () = Faugere_zarith.Fgb_int_zarith.set_number_of_threads 2
+
+  (*let pp_fpoly f (fpoly : (Z.t * int list) list) = 
+    Format.pp_open_hvbox f 0;
+    let pp_fmon fo (fmon : Z.t * int list) = 
+      Format.pp_open_box fo 0;
+      Format.pp_print_string fo (Z.to_string (fst fmon));
+      Format.pp_print_string fo " * [";
+      Format.pp_print_list ~pp_sep:(fun foo () -> Format.pp_print_string foo ";"; Format.pp_print_space foo ()) Format.pp_print_int fo (snd fmon);
+      Format.pp_print_string fo "]";
+      Format.pp_close_box fo ()
+    in
+    Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_fmon f fpoly;
+    Format.pp_close_box f ()*)
+
+  let curr_var = ref 0
+
+  let new_var () = 
+    let y = "y_"^ (string_of_int !curr_var) in
+    curr_var := !curr_var + 1;
+    y
+  
+  let effective_deg_ord_as_list deg_map keep_map top_order ps = 
+    let vars = BatMap.String.keys keep_map in
+    let (keep_vars, discard_vars) = BatEnum.partition (fun v -> BatMap.String.find v keep_map) vars in
+    let cmp_var x y =
+      match (List.find_opt (fun (_, v) -> v = x) top_order, List.find_opt (fun (_, v) -> v = y) top_order) with
+      | None, None -> (-1) *(String.compare x y)
+      | Some (_, _), None -> 1
+      | None, Some (_, _) -> (-1)
+      | Some (x_ind, _), Some (y_ind, _) ->
+        Int.compare x_ind y_ind
+    in
+    let var_ord_bk_1, var_ord_bk_2 = (List.rev (List.sort cmp_var (BatList.of_enum discard_vars))), (List.rev (List.sort cmp_var (BatList.of_enum keep_vars))) in
+    let folder (svar_ord, svar_to_pvar_e, polys) pvar = 
+      let pedeg = match BatMap.String.find_opt pvar deg_map with | None -> 1 | Some e -> e in
+      let svar = new_var () in
+      let svar_edeg = from_var_pow svar pedeg in
+      let sub_ps = List.map (substitute (pvar, svar_edeg)) polys in
+      svar :: svar_ord, BatMap.String.add svar (pvar, pedeg) svar_to_pvar_e, sub_ps
+    in
+    let rord_bk_1, svar_to_pvar, subps = List.fold_left folder ([], BatMap.String.empty, ps) var_ord_bk_1 in
+    let rord_bk_2, svar_to_pvar, subps = List.fold_left folder ([], svar_to_pvar, subps) var_ord_bk_2 in
+    ((var_ord_bk_1, var_ord_bk_2), (List.rev rord_bk_1, List.rev rord_bk_2), svar_to_pvar, subps)
+
+
+  let make_ideal_f deg_map keep_map top_ord eqs : ideal = 
     let normal = List.filter (fun p -> not (is_zero p)) eqs in
-    let ord = make_grevlex_from_list lex_list in
+    let ((orig_vord_bk1, orig_vord_bk2), (vord_bk1, vord_bk2), svar_to_pvar, subps) = effective_deg_ord_as_list deg_map keep_map top_ord normal in
+    let ord = make_grevlex_from_list orig_vord_bk1 orig_vord_bk2 in
     if List.length normal = 0 || List.for_all is_zero normal then 
       {basis = Bot; ord}
     else if List.exists is_const normal then 
       {basis = Top; ord}
     else 
-      let fpolys = List.map (convert_to_faugere lex_list) eqs in
-      Faugere_zarith.Fgb_int_zarith.set_index 5000000;
-      let gb = List.map (convert_from_faugere lex_list) (Faugere_zarith.Fgb_int_zarith.fgb fpolys lex_list []) in
-      {basis = I (List.map (make_sorted_poly ord) gb); ord}
-      (*improved_buchberger ord (List.map (fun p -> convert_from_faugere lex_list (convert_to_faugere lex_list p)) eqs)*)
+      let fpolys = List.map (convert_to_faugere (vord_bk1 @ vord_bk2)) subps in
+      let gb = List.map (convert_from_faugere (vord_bk1 @ vord_bk2)) (Faugere_zarith.Fgb_int_zarith.fgb fpolys vord_bk1 vord_bk2) in
+      let mon_sub m = 
+        let c, monic = fst m, snd m in 
+        let folder acc v = 
+          let vdeg = get_degree v monic in
+          let (old_var, eff_deg) = BatMap.String.find v svar_to_pvar in
+          if vdeg mod eff_deg = 0 then 
+            let new_deg = vdeg / eff_deg in
+            Mon.mult_mon (Mon.make_mon_from_var old_var new_deg) acc
+          else failwith "Not sure how to do this subtitution"
+        in
+        BatEnum.fold folder (Mon.make_mon_from_coef c) (get_vars_m monic)
+      in
+      let poly_sub p = 
+        let mons = get_mons p in
+        from_mon_list (BatList.of_enum (BatEnum.map mon_sub mons))
+      in
+      let normal_gb = List.filter (fun p -> not (is_zero p)) gb in
+      if List.length normal_gb = 0 || List.for_all is_zero normal_gb then {basis = Bot; ord}
+      else if List.exists is_const normal_gb then {basis = Top; ord}
+      else
+        let sorted_gb = List.map (fun p -> make_sorted_poly ord (poly_sub p)) normal_gb in
+        {basis = I sorted_gb; ord}
 
-  let sub_faugere_ideal_to_ideal i svar_to_pvar vord = 
+  (*let sub_faugere_ideal_to_ideal ord i svar_to_pvar = 
     match i.basis with
-    | Top -> {basis = Top; ord = make_grevlex_from_list vord}
-    | Bot -> {basis = Bot; ord = make_grevlex_from_list vord}
+    | Top -> {basis = Top; ord}
+    | Bot -> {basis = Bot; ord}
     | I ps ->
-      let ord = make_grevlex_from_list vord in
       let mon_sub m = 
         let c, monic = fst m, snd m in 
         let folder acc v = 
@@ -380,7 +451,7 @@ module Ideal (C : Sigs.Coefficient) = struct
         from_mon_list (BatList.of_enum (BatEnum.map mon_sub mons))
       in
       let sub_polys = List.map (fun p -> make_sorted_poly ord (poly_sub (fst p))) ps in
-      {basis = I sub_polys; ord}
+      {basis = I sub_polys; ord}*)
      
 
   let mem p i =
@@ -696,6 +767,10 @@ module Cone(C : Sigs.Coefficient) = struct
     let prod_sat_cone = List.fold_left add_ineq {depth=sat; curr_num = 0; first_level = BatIMap.empty ~eq:I.equal; ideal= ideal; ineqs= []} ineqs in
     saturate prod_sat_cone impls
 
+  let make_cone_i ?(sat = 1) ?(ineqs = []) ?(impls = []) ideal = 
+    let prod_sat_cone = List.fold_left add_ineq {depth=sat; curr_num = 0; first_level = BatIMap.empty ~eq:I.equal; ideal= ideal; ineqs= []} ineqs in
+    saturate prod_sat_cone impls
+
   let ppc f c = 
       Format.pp_print_string f "Cone:"; Format.pp_print_space f ();
       ppi f c.ideal;
@@ -707,7 +782,7 @@ module Cone(C : Sigs.Coefficient) = struct
         Format.print_space ();
         Format.pp_print_string f "["; 
         Format.pp_open_box f 0;
-        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) pp f (List.map fst (List.hd c.ineqs));
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (List.map fst (List.hd c.ineqs));
         Format.pp_print_string f "]";
         Format.pp_close_box f (); Format.pp_close_box f ()
 

@@ -288,10 +288,11 @@ module MakeP (M : sig
 
   let ppmm f mm = Format.pp_open_hbox f (); Format.pp_print_string f (snd (M.mon_to_string (M.from_string_c "1", mm))); Format.pp_close_box f ()
 
-  let pp f p = 
+  let pp ?(ord = !M.ord) f p = 
     if BatHashtbl.is_empty p then (Format.pp_open_hbox f (); Format.pp_print_string f "0"; Format.pp_close_box f ())
     else
-      (let mon_list = List.rev (List.sort mon_order (List.map (fun (a, b) -> (b, a)) (BatHashtbl.to_list p))) in
+      (
+      let mon_list = List.rev (List.map (fun (b, a) -> (a, b)) (List.sort (fun a b -> ord (fst a) (fst b)) (BatHashtbl.to_list p))) in
       Format.pp_open_box f 0;
       let first_mon = List.hd mon_list in
       let is_fm_neg, fm_str = M.mon_to_string first_mon in
