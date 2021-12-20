@@ -103,9 +103,6 @@ module type Ideal = sig
     (** Initialize an ideal with a given monomial order and set of generators.*)
     val make_ideal : (monic_mon -> monic_mon -> int) -> poly list -> ideal
 
-    (** Make a polynomial using Faugere with a degrevlex ordering. *)
-    val make_ideal_f : int BatMap.String.t -> bool BatMap.String.t -> (int * string) list -> poly list -> ideal
-
     (** Test whether a polynomial is a member of the ideal. *)
     val mem : poly -> ideal -> bool
 
@@ -152,6 +149,7 @@ module type Cone = sig
     The optional [sat] parameter will mutliply inequalities together up to the [sat] limit. Default is 1.*)
     val make_cone : ?sat:int -> ?ord:(monic_mon -> monic_mon -> int) -> ?eqs:poly list -> ?ineqs:poly list -> ?impls: impl list -> unit -> cone
 
+    (** Same as [make_cone] but uses the equations and order from the given ideal. *)
     val make_cone_i : ?sat:int -> ?ineqs:poly list -> ?impls:impl list -> ideal -> cone
 
     (** Tests whether it is implied that the first argument is non-negative assuming the equations and inequalities given by the cone. *)

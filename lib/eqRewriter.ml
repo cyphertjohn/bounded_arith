@@ -196,33 +196,9 @@ let inst_floor_recip map =
   in
   S.fold folder map ([], [])
 
-
-
-(*let effective_deg_ord_as_list deg_map keep_map top_order ps = 
-  let vars = S.keys keep_map in
-  let (keep_vars, discard_vars) = BatEnum.partition (fun v -> S.find v keep_map) vars in
-  let cmp_var x y =
-    match (List.find_opt (fun (_, v) -> v = x) top_order, List.find_opt (fun (_, v) -> v = y) top_order) with
-    | None, None -> (-1) *(compare x y)
-    | Some (_, _), None -> 1
-    | None, Some (_, _) -> (-1)
-    | Some (x_ind, _), Some (y_ind, _) ->
-      compare x_ind y_ind
-  in
-  let var_ord = (List.sort cmp_var (BatList.of_enum keep_vars)) @ (List.sort cmp_var (BatList.of_enum discard_vars)) in
-  let folder (svar_ord, svar_to_pvar_e, polys) pvar = 
-    let pedeg = match S.find_opt pvar deg_map with | None -> 1 | Some e -> e in
-    let svar = new_var () in
-    let svar_edeg = P.from_var_pow svar pedeg in
-    let sub_ps = List.map (P.substitute (pvar, svar_edeg)) polys in
-    svar :: svar_ord, S.add svar (pvar, pedeg) svar_to_pvar_e, sub_ps
-  in
-  let rord, svar_to_pvar, subps = List.fold_left folder ([], S.empty, ps) var_ord in
-  (var_ord, List.rev rord, svar_to_pvar, subps)*)
-
     
 
-(*let effective_deg_ord deg_map keep_map pure_vars top_order a b =
+let effective_deg_ord deg_map keep_map pure_vars top_order a b =
   let a_vars = P.get_vars_m a in
   let b_vars = P.get_vars_m b in
   let (avd, bvd) = (BatEnum.map (fun v -> v, P.get_degree v a) a_vars, BatEnum.map (fun v -> v, P.get_degree v b) b_vars) in
@@ -261,7 +237,7 @@ let inst_floor_recip map =
       let (a_s, b_s) = (List.rev (List.sort cmp_var (BatList.of_enum avd)), List.rev (List.sort cmp_var (BatList.of_enum bvd))) in
       well_formed_lex a_s b_s
     else compare (snd a_deg) (snd b_deg)
-  else compare (fst a_deg) (fst b_deg)*)
+  else compare (fst a_deg) (fst b_deg)
 
 let unpurify polys term_map =
   let unpure_map, top_order = unpurify_map term_map in
@@ -386,7 +362,7 @@ let rewrite ?sat:(sat=3) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_
   let calc_ideal t_map all_vars eqs = 
     let deg_map, top_order = calc_deg_map t_map in
     let keep_map = BatEnum.fold keep_folder (calc_keep_vars t_map vars_to_keep) all_vars in
-    I.make_ideal_f deg_map keep_map top_order eqs
+    I.make_ideal (effective_deg_ord deg_map keep_map pure_vars top_order) eqs
   in
 
   let iteration t_map tp ideal ineq =
