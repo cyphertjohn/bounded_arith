@@ -574,7 +574,8 @@ module Cone(C : Sigs.Coefficient) = struct
       in
       let hard_cnsts, r_cnsts, r_to_dim = DimMap.fold generate_cnstrs dim_map ([], [], S.empty) in
       let rec find_optimal_sol rs = 
-        let prob = Lp.Problem.make (Lp.Objective.minimize (BatEnum.fold Lp.Poly.(++) (Lp.Poly.zero) (S.keys r_to_dim))) (hard_cnsts @ rs) in
+        (*let prob = Lp.Problem.make (Lp.Objective.minimize (BatEnum.fold Lp.Poly.(++) (Lp.Poly.zero) (S.keys r_to_dim))) (hard_cnsts @ rs) in*)
+        let prob = Lp.Problem.make (Lp.Objective.minimize (Lp.Poly.zero)) (hard_cnsts @ rs) in
         (*Log.log ~level:`trace pp_prob prob;*)
         match Lp_glpk.solve ~term_output:false prob with
         | Ok (_, s) ->
