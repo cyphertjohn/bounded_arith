@@ -21,19 +21,19 @@ let pp_funapp f fun_appl =
   Format.pp_close_box f ()
 
 let ppmap pp f term_map = 
-  Format.pp_open_box f 0;
+  (*Format.pp_open_box f 0;*)
   Format.pp_print_string f "Variable map:";
   Format.pp_print_break f 1 4;
   Format.pp_open_vbox f 0;
   let ppvar_map fo (v, value) = 
     Format.pp_open_box fo 0;
     Format.pp_print_string fo (v ^ " ->");
-    Format.pp_print_break fo 1 4;
+    Format.pp_print_break fo 1 6;
     pp f value;
     Format.pp_close_box fo ()
   in
   Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_custom_break fo ~fits:(";", 1, "") ~breaks:("", 0, "")) ppvar_map f (S.bindings term_map);
-  Format.pp_close_box f (); Format.pp_close_box f ()
+  Format.pp_close_box f ()(*; Format.pp_close_box f ()*)
 
 
 let sub_fun_app_var var_to_replace poly_to_replace_with term = 
@@ -400,7 +400,10 @@ let rewrite ?sat:(sat=3) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_
     new_map, new_t, new_ideal, new_ineqs
   in
   let rec loop old_map t_map tp ideal inequalities =
-    if equal_t_map old_map t_map then 
+    if P.is_const tp then 
+      let unpure_t, _ = unpurify [tp] t_map in
+      List.hd unpure_t
+    else if equal_t_map old_map t_map then 
       let (inequ, impls) = inst_floor_recip t_map in
       let cone = C.make_cone_i ~sat:sat ~ineqs:(inequalities @ inequ) ~impls:impls ideal in
       Log.log ~level:`debug C.ppc (Some cone);

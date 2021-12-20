@@ -635,6 +635,7 @@ module Cone(C : Sigs.Coefficient) = struct
     let id, ineqs = c.ideal, c.ineqs in
     let p_ired = I.reduce p id in
     if is_not_neg_const p_ired then true
+    else if I.is_const p_ired then false
     else
       let ineqs = List.concat (List.map (List.map fst) ineqs) in
       let dim_map, p_ineq = polys_to_dim ~ord:None (p_ired :: ineqs) in
@@ -682,7 +683,7 @@ module Cone(C : Sigs.Coefficient) = struct
     Format.pp_close_box f (); Format.pp_close_box f ()
 
   let reduce_ineq ord p ineqs = 
-    if is_zero p then p
+    if is_const p then p
     else if List.length ineqs = 0 then p
     else 
       let dim_map, p_ineq = polys_to_dim ~ord:(Some ord) (p :: ineqs) in
