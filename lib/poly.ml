@@ -627,8 +627,7 @@ module Cone(C : Sigs.Coefficient) = struct
     
   (*let pp_prob f prob = 
     let prob_str = Lp.Problem.to_string ~short:true prob in
-    Format.pp_print_string f prob_str;
-    Format.print_newline ()*)
+    Format.pp_print_string f prob_str*)
 
 
   let is_non_neg p c = 
@@ -714,8 +713,9 @@ module Cone(C : Sigs.Coefficient) = struct
       in
       let hard_cnsts, r_cnsts, r_to_dim = DimMap.fold generate_cnstrs dim_map ([], [], S.empty) in
       let rec find_optimal_sol rs = 
-        let prob = Lp.Problem.make (Lp.Objective.minimize (BatEnum.fold Lp.Poly.(++) (Lp.Poly.zero) (S.keys r_to_dim))) (hard_cnsts @ rs) in
-        (*Log.log ~level:`trace pp_prob prob;*)
+        (*let prob = Lp.Problem.make (Lp.Objective.minimize (BatEnum.fold Lp.Poly.(++) (Lp.Poly.zero) (S.keys r_to_dim))) (hard_cnsts @ rs) in*)
+        let prob = Lp.Problem.make (Lp.Objective.minimize (Lp.Poly.zero)) (hard_cnsts @ rs) in
+        (*Log.log ~level:`trace pp_prob (Some prob);*)
         match Lp_glpk.solve ~term_output:false prob with
         | Ok (_, s) ->
           let collect_lambdas neg_comb (lambda, ineq_dim) = 
@@ -734,7 +734,8 @@ module Cone(C : Sigs.Coefficient) = struct
           in
           let rem = from_mon_list (S.fold collect_remainder r_to_dim []) in
           neg_comb, rem
-        | Error _ -> find_optimal_sol (List.tl rs)
+        | Error _ -> 
+          find_optimal_sol (List.tl rs)
       in
       let neg_comb, rem = find_optimal_sol r_cnsts in
       Log.log ~level:`trace pp_red (Some (p, neg_comb, rem));

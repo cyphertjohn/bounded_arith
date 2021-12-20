@@ -8,6 +8,8 @@
 (homepage "github.com/cyphertjohn/bounded_arith")
 (bug_reports "github.com/cyphertjohn/bounded_arith")
 
+(generate_opam_files true)
+
 (package
  (name bound)
  (synopsis "A library for generating symbolic bounds")
@@ -17,5 +19,7 @@
    (batteries :build)
    (ctypes :build)
    (ctypes-foreign :build)
+   (faugere :build)
+   (faugere_zarith :build)
  )
 )

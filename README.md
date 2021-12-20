@@ -19,6 +19,8 @@ Also, utop is helpful. To install run
 
 `opam install utop`
 
+For this branch of the repo the [ocaml faugere library](https://github.com/cyphertjohn/faugere) is required for Grobner basis calculation.
+
 ## Building
 To build the library MyLib run:
 
