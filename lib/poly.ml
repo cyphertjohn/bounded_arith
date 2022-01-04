@@ -789,6 +789,15 @@ module Cone(C : Sigs.Coefficient) = struct
         Format.pp_open_box f 0;
         Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (List.map fst (List.hd c.ineqs));
         Format.pp_print_string f "]";
+        (*Format.pp_close_box f (); Format.pp_close_box f ();
+        Format.pp_force_newline f ();
+        Format.pp_open_hbox f ();
+        Format.pp_print_string f "Derived Ineqs:";
+        Format.print_space ();
+        Format.pp_print_string f "["; 
+        Format.pp_open_box f 0;
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (List.map fst (List.concat (List.tl c.ineqs)));
+        Format.pp_print_string f "]";*)
         Format.pp_close_box f (); Format.pp_close_box f ()
 
 end
