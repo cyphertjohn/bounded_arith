@@ -273,7 +273,7 @@ module Ideal (C : Sigs.Coefficient) = struct
     Format.pp_close_box f ()
 
   let pp_red ord f (p, basis, mults, rem) = 
-    let filtered_list = List.filter_map (fun (m, (b, _)) -> if is_zero m then None else Some (m, b)) (List.combine mults basis) in
+    let filtered_list = List.filter_map (fun (m, b) -> if is_zero m then None else Some (m, b)) (List.combine mults basis) in
     if List.length filtered_list = 0 then ()
     else 
       (Format.pp_open_box f 0; (pp ~ord:ord) f p; 
@@ -297,10 +297,19 @@ module Ideal (C : Sigs.Coefficient) = struct
       from_const_s "0"
     | Bot -> p
     | I basis -> 
-      let (reduction_occurred, (mults, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
+      let (_, (_, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
+      (*let (reduction_occurred, (mults, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
       if not reduction_occurred then Log.log ~level:`trace (pp_red i.ord) None
-      else Log.log ~level:`trace (pp_red i.ord) (Some (p, basis, mults, fst rem));
+      else Log.log ~level:`trace (pp_red i.ord) (Some (p, List.map fst basis, mults, fst rem));*)
       fst rem
+
+  let reduce_just p (i : ideal) =
+    match i.basis with
+    | Top -> from_const_s "0", [from_const_s "1"]
+    | Bot -> p, [from_const_s "0"]
+    | I basis ->
+      let (_, (mults, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
+      fst rem, mults
 
 
   let make_ideal ord eqs : ideal = 
@@ -344,7 +353,7 @@ module type Cone = sig
 
     val make_cone_i : ?sat:int -> ?ineqs:poly list -> ?impls:impl list -> ideal -> cone
 
-    val is_non_neg : poly -> cone -> bool
+    (*val is_non_neg : poly -> cone -> bool*)
 
     val reduce : poly -> cone -> poly
 
@@ -373,23 +382,37 @@ module Cone(C : Sigs.Coefficient) = struct
   }
   *)
 
+  type eqJust = 
+    {
+      orig : poly;
+      mults : poly list
+    }
+  
+  type posCom = PosComb of ((int * coef) list * I.coef)
+
+  type derJust = eqJust * posCom
+
+  type justification = 
+   | Product of eqJust * (int list)
+   | Given of eqJust * derJust option
+
   type cone = 
     {
       depth : int;
       ideal : I.ideal;
       curr_num : int;
-      first_level : poly BatIMap.t;
-      ineqs : (poly * int list) list list
+      ineqs : (poly * justification) BatIMap.t;
+      ineqs_prod : int list list list
     }
 
   (*type cone = int * I.ideal * poly list list*)
 
-  let is_not_neg_const p = 
+  let is_const_not_neg p = 
     if I.is_const p then
       let c = fst (List.hd (BatList.of_enum (I.get_mons p))) in
-      if I.Mon.cmp c (I.Mon.from_string_c "0") >= 0 then true
-      else false
-    else false
+      if I.Mon.cmp c (I.Mon.from_string_c "0") >= 0 then Some c
+      else None
+    else None
 
   (*let saturate_prod l depth = 
     let rec aux1 l1 d =
@@ -422,32 +445,46 @@ module Cone(C : Sigs.Coefficient) = struct
       List.rev (aux1 l depth)*)
 
   (* This function doesn't check whether incoming ine is already a member of the linear cone. Could consider an alternative*)
-  let add_ineq c ine : cone = 
-    let minimize_ineqs ins = 
-      let reduced_ineqs = List.map (fun i -> I.reduce (fst i) c.ideal, snd i) ins in
-      List.filter (fun p -> not (is_not_neg_const (fst p))) reduced_ineqs
+  let add_ineq c ine just : cone = 
+    let mult_and_minimize_ineqs (ineqs, curr_id) ins_to_add = 
+      let reduce_and_just (inequs, id) prod = 
+        let p = List.fold_left (fun acc ind -> I.mul acc (fst (BatIMap.find ind inequs))) (I.from_const_s "1") prod in
+        let p_red, mults = I.reduce_just p c.ideal in
+        match is_const_not_neg p_red with
+        | Some _ -> inequs, id
+        | None ->
+          let eq_just = {orig = p; mults} in
+          let new_ineqs = BatIMap.add id (p_red, Product (eq_just, prod)) inequs in
+          new_ineqs, (id + 1)
+      in
+      List.fold_left reduce_and_just (ineqs, curr_id) ins_to_add
     in
-    let ine_red = I.reduce ine c.ideal in
-    if is_not_neg_const ine_red then c
-    else if BatIMap.is_empty c.first_level then 
+    if not (is_const_not_neg ine = None) then c
+    else if BatIMap.is_empty c.ineqs then 
       let poly_id = c.curr_num in
       let rec dup v t = if t <=0 then [] else v :: (dup v (t-1)) in
       let rec aux acc depth = 
         if depth <= 0 then acc
         else 
-          aux ([I.exp_poly ine_red depth, dup poly_id depth] :: acc) (depth - 1)
+          aux ([dup poly_id depth] :: acc) (depth - 1)
       in
-      {depth = c.depth; ideal = c.ideal; curr_num = (poly_id + 1); first_level = BatIMap.add poly_id ine_red c.first_level; ineqs= (List.map minimize_ineqs (aux [] c.depth))}
+      let ineq_ladder = aux [] c.depth in
+      let prod_to_comput = List.concat (List.tl ineq_ladder) in
+      let ineqs, next_id = mult_and_minimize_ineqs ((BatIMap.add poly_id (ine, just) (BatIMap.empty ~eq:(fun _ _ -> false))), poly_id + 1) prod_to_comput in
+      {depth = c.depth; ideal = c.ideal; curr_num = next_id; ineqs; ineqs_prod = ineq_ladder}
     else 
       let poly_id = c.curr_num in
-      let folder acc curr_level = 
-        if List.length acc = 0 then [(ine_red, [poly_id]) :: curr_level]
+      let folder (all_ineq, new_ineqs) curr_level = 
+        if List.length all_ineq = 0 then [[poly_id] :: curr_level], new_ineqs
         else
-          let prev_level = List.hd acc in
-          ((List.map (fun p -> I.mul ine_red (fst p), poly_id :: (snd p)) prev_level) @ curr_level) :: acc
+          let prev_level = List.hd all_ineq in
+          let new_ineq = List.map (fun p -> poly_id :: p) prev_level in
+          (new_ineq @ curr_level) :: all_ineq, new_ineq @ new_ineqs
       in
-      let new_ineqs = List.map minimize_ineqs (List.rev (List.fold_left folder [] c.ineqs)) in
-      {depth = c.depth; ideal = c.ideal; curr_num = (poly_id + 1); first_level = BatIMap.add poly_id ine_red c.first_level; ineqs= new_ineqs}
+      let ineqs_with_ine = BatIMap.add poly_id (ine, just) c.ineqs in
+      let ineqs_ladder, ineqs_to_add = List.fold_left folder ([], []) c.ineqs_prod in
+      let ineqs, next_id = mult_and_minimize_ineqs (ineqs_with_ine, poly_id + 1) ineqs_to_add in
+      {depth = c.depth; ideal = c.ideal; curr_num = next_id; ineqs; ineqs_prod = List.rev ineqs_ladder}
 
 
   module MonMap = BatHashtbl
@@ -456,12 +493,13 @@ module Cone(C : Sigs.Coefficient) = struct
 
   module S = BatMap.Make(struct type t = Lp.Poly.t let compare = Lp.Poly.compare end)
 
-  let polys_to_dim ?ord:(ord = None) polys = 
-    let mon_map = MonMap.create (10 * (List.length polys)) in
-    let add_mons poly = 
+  let polys_to_dim ?ord:(ord = None) p polys = 
+    let mon_map = MonMap.create (10 * (BatISet.cardinal (BatIMap.domain polys))) in
+    let add_mons _ (poly, _) = 
       BatEnum.iter (fun (_, m) -> MonMap.modify_def 0 m (fun _ -> 0) mon_map) (get_mons poly)
     in
-    List.iter add_mons polys;
+    BatIMap.iter add_mons polys;
+    BatEnum.iter (fun (_, m) -> MonMap.modify_def 0 m (fun _ -> 0) mon_map) (get_mons p);
     let mon_list = 
       match ord with
       | None -> BatList.of_enum (BatEnum.map fst (MonMap.enum mon_map))
@@ -478,178 +516,277 @@ module Cone(C : Sigs.Coefficient) = struct
         generate_dims ms new_dim_map
     in
     let dim_map = generate_dims mon_list (DimMap.empty ~eq:(=)) in
-    let poly_to_coef_map poly = 
+    let poly_to_coef_map (poly, _) = 
       BatEnum.fold (fun acc (c, mon) -> 
         let dim = MonMap.find mon_map mon in
         DimMap.add dim c acc) (DimMap.empty ~eq:(fun x y -> Mon.cmp x y = 0)) (get_mons poly)
     in
-    dim_map, List.map poly_to_coef_map polys
+    dim_map, poly_to_coef_map (p, ()), BatIMap.map poly_to_coef_map polys
     
   (*let pp_prob f prob = 
     let prob_str = Lp.Problem.to_string ~short:true prob in
     Format.pp_print_string f prob_str;
-    Format.print_newline ()*)
+    Format.force_newline ()*)
 
 
-  let is_non_neg p c = 
-    let id, ineqs = c.ideal, c.ineqs in
-    let p_ired = I.reduce p id in
-    if is_not_neg_const p_ired then true
-    else if I.is_const p_ired then false
-    else
-      let ineqs = List.concat (List.map (List.map fst) ineqs) in
-      let dim_map, p_ineq = polys_to_dim ~ord:None (p_ired :: ineqs) in
-      let p_dim = List.hd p_ineq in
-      let ineq_dim = List.tl p_ineq in
-      let lambdas = Array.to_list (Lp.Poly.range ~lb:0. ~start:0 (List.length ineq_dim) "lambda") in
-      let ineq_dim_lambda = List.map2 (fun lambda ineq -> lambda, ineq) lambdas ineq_dim in
-      let generate_cnstrs dim m cnsts = 
-        let generate_lhs_sum sum (lambda, ineq) = 
-          try 
-            let dim_c = DimMap.find dim ineq in
-            Lp.Poly.(++) sum (Lp.Poly.expand (Lp.Poly.c (Mon.to_float dim_c)) lambda)
-          with Not_found -> sum
+  let is_non_neg p c : derJust option = 
+    let id = c.ideal in
+    let p_ired, mults = I.reduce_just p id in
+    match is_const_not_neg p_ired with
+    | Some coe ->
+      let eq_just = {orig = p; mults} in
+      Some (eq_just, PosComb ([], coe))
+    | None ->
+      if I.is_const p_ired then None
+      else
+        let eq_just = {orig = p; mults} in
+        let dim_map, p_dim, p_ineq = polys_to_dim ~ord:None p_ired c.ineqs in
+        let ids = BatISet.elements (BatIMap.domain p_ineq) in
+        let lambdas = Array.to_list (Lp.Poly.range ~lb:0. ~start:0 (List.length ids) "lambda") in
+        let ineq_dim_lambda = List.combine lambdas ids in
+        let generate_cnstrs dim m (cnsts, r_var) = 
+          let generate_lhs_sum sum (lambda, ineq_id) = 
+            try 
+              let dim_c = DimMap.find dim (BatIMap.find ineq_id p_ineq) in
+              Lp.Poly.(++) sum (Lp.Poly.expand (Lp.Poly.c (Mon.to_float dim_c)) lambda)
+            with Not_found -> sum
+            in
+          let sum = List.fold_left generate_lhs_sum (Lp.Poly.zero) ineq_dim_lambda in
+          let p_coef = 
+            try Lp.Poly.c (Mon.to_float (DimMap.find dim p_dim))
+            with Not_found -> Lp.Poly.zero
           in
-        let sum = List.fold_left generate_lhs_sum (Lp.Poly.zero) ineq_dim_lambda in
-        let p_coef = 
-          try Lp.Poly.c (Mon.to_float (DimMap.find dim p_dim))
-          with Not_found -> Lp.Poly.zero
+          if I.Mon.is_const (I.Mon.from_string_c "0", m) then
+            let r = Lp.Poly.var ~lb:0. "r" in
+            let new_cnst = Lp.Cnstr.eq (Lp.Poly.(++) sum r) p_coef in
+            new_cnst :: cnsts, Some r
+          else
+            let new_cnst = Lp.Cnstr.eq sum p_coef in
+            new_cnst :: cnsts, r_var
         in
-        if I.Mon.is_const (I.Mon.from_string_c "0", m) then
-          let r = Lp.Poly.var ~lb:0. "r" in
-          let new_cnst = Lp.Cnstr.eq (Lp.Poly.(++) sum r) p_coef in
-          new_cnst :: cnsts
-        else
-          let new_cnst = Lp.Cnstr.eq sum p_coef in
-          new_cnst :: cnsts
-      in
-    let cnstrs = DimMap.fold generate_cnstrs dim_map [] in
-    let prob = Lp.Problem.make (Lp.Objective.minimize Lp.Poly.zero) cnstrs in
-    match Lp_glpk.solve ~term_output:false prob with
-    | Ok _ -> true
-    | Error _ -> false
+      let cnstrs, r_opt = DimMap.fold generate_cnstrs dim_map ([], None) in
+      let r = match r_opt with | Some v -> v | None -> failwith "no constant constraint was created" in
+      let prob = Lp.Problem.make (Lp.Objective.minimize Lp.Poly.zero) cnstrs in
+      match Lp_glpk.solve ~term_output:false prob with
+      | Ok (_, m) -> 
+        let collect_lambdas pos_comb (lambda, ineq_id) = 
+          let lambdac = Mon.of_float (Lp.PMap.find lambda m) in
+          if Mon.cmp lambdac (Mon.from_string_c "0") = 0 then pos_comb
+          else
+            (ineq_id, lambdac) :: pos_comb
+        in
+        let pos_comb = List.fold_left collect_lambdas [] ineq_dim_lambda in
+        let witness = Mon.of_float (Lp.PMap.find r m) in
+        Some (eq_just, PosComb (pos_comb, witness))
+      | Error _ -> None
 
-  let pp_red f (t, lambda_ps, rem) = 
-    Format.pp_open_box f 0; pp f t; Format.pp_print_string f " ="; 
-    Format.pp_open_hvbox f 0;
-    pp f rem; Format.pp_print_string f " +"; Format.pp_print_space f ();
-    let pp_lambdas fo (lambda, b) = 
-      Format.pp_open_box fo 0; 
-      Format.pp_print_string fo (Mon.to_string_c lambda);
-      Format.pp_print_string fo "("; pp fo b; Format.pp_print_string fo ")";
-      Format.pp_close_box fo ()
-    in
-    Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_lambdas f lambda_ps;
-    Format.pp_close_box f (); Format.pp_close_box f ()
+
+  let pp_used_th c fo id = 
+    Format.pp_print_string fo "Theorem "; Format.pp_print_int fo id; Format.pp_print_string fo ":";
+    pp ~ord:c.ideal.ord fo (fst (BatIMap.find id c.ineqs)); Format.pp_print_string fo " >= 0"
+
+  let rec pp_just c f ineq_id = 
+    let ineq, just = BatIMap.find ineq_id c.ineqs in
+    match just with
+    | Given (eq_just, None) ->
+      Format.pp_open_hbox f (); Format.pp_print_string f "Theorem "; Format.pp_print_int f ineq_id; Format.pp_print_string f ":";
+      pp ~ord:c.ideal.ord f ineq; Format.pp_print_string f " >= 0"; Format.pp_close_box f (); Format.pp_force_newline f ();
+      Format.pp_open_box f 0; Format.pp_print_string f "Proof:"; Format.pp_open_vbox f 0; Format.pp_print_space f ();
+      Format.pp_open_hbox f (); Format.pp_print_string f "Assumption:"; Format.pp_print_space f (); 
+        pp ~ord:c.ideal.ord f eq_just.orig; Format.pp_print_string f " >= 0"; Format.pp_close_box f (); 
+      Format.pp_print_space f ();
+      pp_red c.ideal.ord f (eq_just.orig, get_generators c.ideal, eq_just.mults, ineq);
+      Format.pp_close_box f ();
+      Format.pp_print_string f "QED";
+      Format.pp_force_newline f ();
+      Format.pp_close_box f ()
+    | Product (eq_just, prods) ->
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_force_newline fo ()) (pp_just c) f prods;
+      Format.pp_open_hbox f (); Format.pp_print_string f "Theorem "; Format.pp_print_int f ineq_id; Format.pp_print_string f ":";
+      pp ~ord:c.ideal.ord f ineq; Format.pp_print_string f " >= 0"; Format.pp_close_box f (); Format.pp_force_newline f ();
+      Format.pp_open_box f 0; Format.pp_print_string f "Proof:"; Format.pp_open_vbox f 0; Format.pp_print_space f ();
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) (pp_used_th c) f prods; Format.pp_print_space f ();
+      let pp_par fo id = 
+        Format.pp_print_string fo "("; pp ~ord:c.ideal.ord fo (fst (BatIMap.find id c.ineqs)); Format.pp_print_string fo ")"
+      in
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " *"; Format.pp_print_space fo ()) pp_par f prods;
+      Format.pp_print_string f " =";
+      Format.pp_open_box f 0;
+      Format.pp_print_space f ();
+      pp_red c.ideal.ord f (eq_just.orig, get_generators c.ideal, eq_just.mults, ineq);
+      Format.pp_close_box f ();
+      Format.pp_close_box f ();
+      Format.pp_force_newline f ();
+      Format.pp_print_string f "QED";
+      Format.pp_force_newline f ();
+      Format.pp_close_box f ()
+    | Given (eq_just, Some (head_eq_just, PosComb (pos_com, witness))) ->
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_force_newline fo ()) (pp_just c) f (List.map fst pos_com);
+      Format.pp_open_hbox f (); Format.pp_print_string f "Theorem "; Format.pp_print_int f ineq_id; Format.pp_print_string f ":";
+      pp ~ord:c.ideal.ord f ineq; Format.pp_print_string f " >= 0"; Format.pp_close_box f (); Format.pp_force_newline f ();
+      Format.pp_open_box f 0; Format.pp_print_string f "Proof:"; Format.pp_open_vbox f 0; Format.pp_print_space f ();
+      Format.pp_open_hbox f ();
+      Format.pp_print_string f "Assumption: "; pp ~ord:c.ideal.ord f (head_eq_just.orig); Format.pp_print_string f " >=0  ==> "; pp ~ord:c.ideal.ord f (eq_just.orig);
+      Format.pp_print_string f " >= 0";
+      Format.pp_close_box f (); Format.pp_print_space f ();
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) (pp_used_th c) f (List.map fst pos_com); Format.pp_print_space f ();
+      let eq_mults, eq_basis = head_eq_just.mults, get_generators c.ideal in
+      let rem = from_const witness in
+      let ineqs_used, ineq_mults = List.split (List.map (fun (id, coe) -> (fst (BatIMap.find id c.ineqs), from_const coe)) pos_com) in
+      pp_red c.ideal.ord f (head_eq_just.orig, eq_basis @ ineqs_used, eq_mults @ ineq_mults, rem);
+      Format.pp_print_space f ();
+      pp_red c.ideal.ord f (eq_just.orig, eq_basis, eq_just.mults, ineq); 
+      Format.pp_close_box f ();
+      Format.pp_force_newline f ();
+      Format.pp_print_string f "QED";
+      Format.pp_force_newline f ();
+      Format.pp_close_box f ()
+    
+  let pp_red f (eq_just, neg_comb, rem, c) = 
+    Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_force_newline fo ()) (pp_just c) f (List.map snd neg_comb);
+    Format.pp_open_hbox f (); Format.pp_print_string f "Theorem "; Format.pp_print_string f ":";
+    pp ~ord:c.ideal.ord f eq_just.orig; Format.pp_print_string f " <= "; pp ~ord:c.ideal.ord f rem; Format.pp_close_box f (); Format.pp_force_newline f ();
+    Format.pp_open_box f 0; Format.pp_print_string f "Proof:"; Format.pp_open_vbox f 0; Format.pp_print_space f ();
+    Format.pp_open_vbox f 0;
+    Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) (pp_used_th c) f (List.map snd neg_comb); Format.pp_print_space f ();
+    Format.pp_close_box f ();
+    let ineqs_used, ineq_mults = List.split (List.map (fun (coe, id) -> fst (BatIMap.find id c.ineqs), from_const coe) neg_comb) in 
+    pp_red c.ideal.ord f (eq_just.orig, (get_generators c.ideal) @ ineqs_used, eq_just.mults @ ineq_mults, rem);
+    Format.pp_force_newline f ();
+    Format.pp_print_string f "QED";
+    Format.pp_force_newline f ();
+    Format.pp_close_box f ()
 
   let reduce_ineq ord p ineqs = 
-    if is_const p then p
-    else if List.length ineqs = 0 then p
+    if is_const p then [], p
     else 
-      let dim_map, p_ineq = polys_to_dim ~ord:(Some ord) (p :: ineqs) in
-      let p_dim = List.hd p_ineq in
-      let ineq_dim = List.tl p_ineq in
-      let lambdas = Array.to_list (Lp.Poly.range ~lb:Float.neg_infinity ~ub:0. ~start:0 (List.length ineq_dim) "lambda") in
-      let ineq_dim_lambda = List.map2 (fun lambda ineq -> lambda, ineq) lambdas ineq_dim in
+      let ids = BatISet.elements (BatIMap.domain ineqs) in
+      if List.length ids = 0 then [], p
+      else 
+        let dim_map, p_dim, p_ineq = polys_to_dim ~ord:(Some ord) p ineqs in
+        let lambdas = Array.to_list (Lp.Poly.range ~lb:Float.neg_infinity ~ub:0. ~start:0 (List.length ids) "lambda") in
+        let ineq_dim_lambda = List.combine lambdas ids in
       (*let add_pos_mult i ineq = 
         Lp.Poly.of_var (Lp.Var.make ~ub:0. ("lambda" ^ (string_of_int i))), ineq
       in
       let ineq_dim_lambda = List.mapi add_pos_mult ineq_dim in*)
-      let generate_cnstrs dim _ (hard_cnsts, r_cnsts, r_map) = 
-        let generate_lhs_sum sum (lambda, ineq) = 
-          try 
-            let dim_c = DimMap.find dim ineq in
-            Lp.Poly.(++) sum (Lp.Poly.expand (Lp.Poly.c (Mon.to_float dim_c)) lambda)
-          with Not_found -> sum
+        let generate_cnstrs dim _ (hard_cnsts, r_cnsts, r_map) = 
+          let generate_lhs_sum sum (lambda, ineq_id) = 
+            try 
+              let dim_c = DimMap.find dim (BatIMap.find ineq_id p_ineq) in
+              Lp.Poly.(++) sum (Lp.Poly.expand (Lp.Poly.c (Mon.to_float dim_c)) lambda)
+            with Not_found -> sum
+            in
+          let sum = List.fold_left generate_lhs_sum (Lp.Poly.zero) ineq_dim_lambda in
+          let r = Lp.Poly.var ~lb:Float.neg_infinity ("r" ^ (string_of_int dim)) in
+          let p_coef = 
+            try Lp.Poly.c (Mon.to_float (DimMap.find dim p_dim))
+            with Not_found -> Lp.Poly.zero
           in
-        let sum = List.fold_left generate_lhs_sum (Lp.Poly.zero) ineq_dim_lambda in
-        let r = Lp.Poly.var ~lb:Float.neg_infinity ("r" ^ (string_of_int dim)) in
-        let p_coef = 
-          try Lp.Poly.c (Mon.to_float (DimMap.find dim p_dim))
-          with Not_found -> Lp.Poly.zero
+          let new_cnst = Lp.Cnstr.eq (Lp.Poly.(++) sum r) p_coef in
+          let r_zero = Lp.Cnstr.eq r Lp.Poly.zero in
+          new_cnst :: hard_cnsts, r_zero :: r_cnsts, S.add r dim r_map
         in
-        let new_cnst = Lp.Cnstr.eq (Lp.Poly.(++) sum r) p_coef in
-        let r_zero = Lp.Cnstr.eq r Lp.Poly.zero in
-        new_cnst :: hard_cnsts, r_zero :: r_cnsts, S.add r dim r_map
-      in
-      let hard_cnsts, r_cnsts, r_to_dim = DimMap.fold generate_cnstrs dim_map ([], [], S.empty) in
-      let rec find_optimal_sol rs = 
-        (*let prob = Lp.Problem.make (Lp.Objective.minimize (BatEnum.fold Lp.Poly.(++) (Lp.Poly.zero) (S.keys r_to_dim))) (hard_cnsts @ rs) in*)
-        let prob = Lp.Problem.make (Lp.Objective.minimize (Lp.Poly.zero)) (hard_cnsts @ rs) in
-        (*Log.log ~level:`trace pp_prob prob;*)
-        match Lp_glpk.solve ~term_output:false prob with
-        | Ok (_, s) ->
-          let collect_lambdas neg_comb (lambda, ineq_dim) = 
-            let lambdac = Mon.of_float (Lp.PMap.find lambda s) in
-            if Mon.cmp lambdac (Mon.from_string_c "0") = 0 then neg_comb
-            else
-              let ineq = DimMap.fold (fun dim coef acc -> (coef, DimMap.find dim dim_map) :: acc) ineq_dim [] in 
-              (lambdac, from_mon_list ineq) :: neg_comb
-          in
-          let neg_comb = List.fold_left collect_lambdas [] ineq_dim_lambda in
-          let collect_remainder r_s r_dim rem = 
-            let rc = Mon.of_float (Lp.PMap.find r_s s) in
-            if Mon.cmp rc (Mon.from_string_c "0") = 0 then rem
-            else
-              (rc, DimMap.find r_dim dim_map) :: rem
-          in
-          let rem = from_mon_list (S.fold collect_remainder r_to_dim []) in
-          neg_comb, rem
-        | Error _ -> find_optimal_sol (List.tl rs)
-      in
-      let neg_comb, rem = find_optimal_sol r_cnsts in
-      Log.log ~level:`trace pp_red (Some (p, neg_comb, rem));
-      rem
+        let hard_cnsts, r_cnsts, r_to_dim = DimMap.fold generate_cnstrs dim_map ([], [], S.empty) in
+        let rec find_optimal_sol rs = 
+          (*let prob = Lp.Problem.make (Lp.Objective.minimize (BatEnum.fold Lp.Poly.(++) (Lp.Poly.zero) (S.keys r_to_dim))) (hard_cnsts @ rs) in*)
+          let prob = Lp.Problem.make (Lp.Objective.minimize (Lp.Poly.zero)) (hard_cnsts @ rs) in
+          (*Log.log ~level:`trace pp_prob prob;*)
+          match Lp_glpk.solve ~term_output:false prob with
+          | Ok (_, s) ->
+            let collect_lambdas neg_comb (lambda, ineq_id) = 
+              let lambdac = Mon.of_float (Lp.PMap.find lambda s) in
+              if Mon.cmp lambdac (Mon.from_string_c "0") = 0 then neg_comb
+              else
+                (lambdac, ineq_id) :: neg_comb
+            in
+            let neg_comb = List.fold_left collect_lambdas [] ineq_dim_lambda in
+            let collect_remainder r_s r_dim rem = 
+              let rc = Mon.of_float (Lp.PMap.find r_s s) in
+              if Mon.cmp rc (Mon.from_string_c "0") = 0 then rem
+              else
+                (rc, DimMap.find r_dim dim_map) :: rem
+            in
+            let rem = from_mon_list (S.fold collect_remainder r_to_dim []) in
+            neg_comb, rem
+          | Error _ -> find_optimal_sol (List.tl rs)
+        in
+        find_optimal_sol r_cnsts
         
   let reduce_eq p c = I.reduce p c.ideal
 
   let reduce p c = 
-    let p_ired = I.reduce p c.ideal in
-    let p_ineq_red = reduce_ineq c.ideal.ord p_ired (List.concat (List.map (List.map fst) c.ineqs)) in
+    let p_ired, mults = I.reduce_just p c.ideal in
+    let neg_comb, p_ineq_red = reduce_ineq c.ideal.ord p_ired c.ineqs in
+    let eq_just = {orig = p_ired; mults} in
+    Log.log ~level:`debug pp_red (Some (eq_just, neg_comb, p_ineq_red, c));
     p_ineq_red
     
 
   let get_eq_basis c = I.get_generators c.ideal
 
   let get_ineq_basis c = 
-    if List.length c.ineqs = 0 then [I.from_const_s "0"]
+    if List.length c.ineqs_prod = 0 then [I.from_const_s "0"]
     else
-      List.map fst (List.hd c.ineqs)
+      let first_level = List.map List.hd (List.hd c.ineqs_prod) in
+      List.map (fun i -> fst (BatIMap.find i c.ineqs)) first_level
 
   let saturate c impls = 
     let rec aux curr_cone worklist tried = 
       match worklist with
       | [] -> curr_cone
       | (imp, con) :: rest ->
-        if is_non_neg imp curr_cone then aux (add_ineq curr_cone con) (rest @ tried) []
-        else
-          aux curr_cone rest ((imp, con) :: tried)
+        match is_non_neg imp curr_cone with
+        | None -> aux curr_cone rest ((imp, con) :: tried)
+        | Some just ->
+           let con_red, mults = I.reduce_just con c.ideal in
+           let eq_just = {orig = con; mults} in
+           aux (add_ineq curr_cone con_red (Given (eq_just, (Some just)))) (rest @ tried) []
     in
     aux c impls []
 
   let make_cone ?(sat = 1) ?(ord = I.grlex_ord) ?(eqs = []) ?(ineqs = []) ?(impls = []) () = 
     let ideal = make_ideal ord eqs in
-    let prod_sat_cone = List.fold_left add_ineq {depth=sat; curr_num = 0; first_level = BatIMap.empty ~eq:I.equal; ideal= ideal; ineqs= []} ineqs in
+    let red_add_ine co ine = 
+      let ine_red, mults = I.reduce_just ine co.ideal in
+      let eq_just = {orig = ine_red; mults} in
+      add_ineq co ine_red (Given (eq_just, None))
+    in
+    let prod_sat_cone = List.fold_left red_add_ine {depth=sat; curr_num = 0; ideal= ideal; ineqs= BatIMap.empty ~eq:(fun _ _ -> false); ineqs_prod = []} ineqs in
     saturate prod_sat_cone impls
 
   let make_cone_i ?(sat = 1) ?(ineqs = []) ?(impls = []) ideal = 
-    let prod_sat_cone = List.fold_left add_ineq {depth=sat; curr_num = 0; first_level = BatIMap.empty ~eq:I.equal; ideal= ideal; ineqs= []} ineqs in
+    let red_add_ine co ine = 
+      let ine_red, mults = I.reduce_just ine co.ideal in
+      let eq_just = {orig = ine_red; mults} in
+      add_ineq co ine_red (Given (eq_just, None))
+    in
+    let prod_sat_cone = List.fold_left red_add_ine {depth=sat; curr_num = 0; ideal= ideal; ineqs= BatIMap.empty ~eq:(fun _ _ -> false); ineqs_prod = []} ineqs in
     saturate prod_sat_cone impls
-
+  
   let ppc f c = 
       Format.pp_print_string f "Cone:"; Format.pp_print_space f ();
       ppi f c.ideal;
       Format.pp_force_newline f ();
-      if List.length c.ineqs = 0 then Format.pp_print_string f "Ineqs: [0]"
+      if BatIMap.is_empty c.ineqs then Format.pp_print_string f "Ineqs: [0]"
       else
         Format.pp_open_hbox f ();
         Format.pp_print_string f "Basis Ineqs:";
         Format.print_space ();
         Format.pp_print_string f "["; 
         Format.pp_open_box f 0;
-        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (List.map fst (List.hd c.ineqs));
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (get_ineq_basis c);
         Format.pp_print_string f "]";
-        Format.pp_close_box f (); Format.pp_close_box f ()
+        Format.pp_close_box f (); Format.pp_close_box f ();
+        (*Format.pp_force_newline f ();
+        Format.pp_open_hbox f ();
+        Format.pp_print_string f "Derived Ineqs:";
+        Format.print_space ();
+        Format.pp_print_string f "["; 
+        Format.pp_open_box f 0;
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (List.map fst (List.concat (List.tl c.ineqs)));
+        Format.pp_print_string f "]";
+        Format.pp_close_box f (); Format.pp_close_box f ()*)
 
 end
 

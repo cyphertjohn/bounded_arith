@@ -152,8 +152,8 @@ module type Cone = sig
     (** Same as [make_cone] but uses the equations and order from the given ideal. *)
     val make_cone_i : ?sat:int -> ?ineqs:poly list -> ?impls:impl list -> ideal -> cone
 
-    (** Tests whether it is implied that the first argument is non-negative assuming the equations and inequalities given by the cone. *)
-    val is_non_neg : poly -> cone -> bool
+    (*(** Tests whether it is implied that the first argument is non-negative assuming the equations and inequalities given by the cone. *)
+    val is_non_neg : poly -> cone -> bool*)
 
     (** Reduce a polynomial by a cone. That is [reduce p i], returns r, such that p = -f + r, 
     with the leading term of r minimum in the monomial order and f in the cone. Since f is a member of the cone it is nonnegative, so p <= r.*)
