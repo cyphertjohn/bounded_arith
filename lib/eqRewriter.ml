@@ -196,30 +196,6 @@ let inst_floor_recip map =
   in
   S.fold folder map ([], [])
 
-
-
-(*let effective_deg_ord_as_list deg_map keep_map top_order ps = 
-  let vars = S.keys keep_map in
-  let (keep_vars, discard_vars) = BatEnum.partition (fun v -> S.find v keep_map) vars in
-  let cmp_var x y =
-    match (List.find_opt (fun (_, v) -> v = x) top_order, List.find_opt (fun (_, v) -> v = y) top_order) with
-    | None, None -> (-1) *(compare x y)
-    | Some (_, _), None -> 1
-    | None, Some (_, _) -> (-1)
-    | Some (x_ind, _), Some (y_ind, _) ->
-      compare x_ind y_ind
-  in
-  let var_ord = (List.sort cmp_var (BatList.of_enum keep_vars)) @ (List.sort cmp_var (BatList.of_enum discard_vars)) in
-  let folder (svar_ord, svar_to_pvar_e, polys) pvar = 
-    let pedeg = match S.find_opt pvar deg_map with | None -> 1 | Some e -> e in
-    let svar = new_var () in
-    let svar_edeg = P.from_var_pow svar pedeg in
-    let sub_ps = List.map (P.substitute (pvar, svar_edeg)) polys in
-    svar :: svar_ord, S.add svar (pvar, pedeg) svar_to_pvar_e, sub_ps
-  in
-  let rord, svar_to_pvar, subps = List.fold_left folder ([], S.empty, ps) var_ord in
-  (var_ord, List.rev rord, svar_to_pvar, subps)*)
-
     
 
 (*let effective_deg_ord deg_map keep_map pure_vars top_order a b =
@@ -396,7 +372,7 @@ let rewrite ?sat:(sat=3) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_
     let (new_eqs, new_ineqs, new_t, new_map) = update_map ideal t_map tp (I.get_generators ideal) ineq in
     Log.log_line_s ~level:`trace "Next ideal";
     let new_ideal = calc_ideal t_map (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (tp::new_eqs @ new_ineqs)))) new_eqs in
-    Log.log ~level:`debug I.ppi (Some new_ideal);
+    Log.log ~level:`trace I.ppi (Some new_ideal);
     new_map, new_t, new_ideal, new_ineqs
   in
   let rec loop old_map t_map tp ideal inequalities =
@@ -416,7 +392,7 @@ let rewrite ?sat:(sat=3) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_
   in
   Log.log_line_s ~level:`trace "Initial ideal";
   let ideal = calc_ideal term_map (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (t_p::eqs @ ineqs)))) eqs in
-  Log.log ~level:`debug I.ppi (Some ideal);
+  Log.log ~level:`trace I.ppi (Some ideal);
   let (new_map, new_t, new_ideal, new_ineqs) = iteration term_map t_p ideal ineqs in
   loop term_map new_map new_t new_ideal new_ineqs
 
