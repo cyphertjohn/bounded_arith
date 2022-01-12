@@ -333,13 +333,13 @@ module Ideal (C : Sigs.Coefficient) = struct
       let grevlex_bk1 = 
         try (List.find ((<>) 0) (List.rev (List.map2 (-) m1d_bk_1 m2d_bk_1)))
         with Not_found -> 0 in
-      if grevlex_bk1 <> 0 then grevlex_bk1
+      if grevlex_bk1 <> 0 then (-1) * grevlex_bk1
       else
         let m1d_bk_2 = List.map (fun v -> effective_deg v * Mon.degree v m1) bk2 in
         let m2d_bk_2 = List.map (fun v -> effective_deg v * Mon.degree v m2) bk2 in
         let m1bk2tot, m2bk2tot = List.fold_left (+) 0 m1d_bk_2, List.fold_left (+) 0 m2d_bk_2 in
         if m1bk2tot = m2bk2tot then
-          try (List.find ((<>) 0) (List.rev (List.map2 (-) m1d_bk_2 m2d_bk_2)))
+          try (-1) * (List.find ((<>) 0) (List.rev (List.map2 (-) m1d_bk_2 m2d_bk_2)))
           with Not_found -> 0
         else Int.compare m1bk2tot m2bk2tot
     else
@@ -894,7 +894,7 @@ module Cone(C : Sigs.Coefficient) = struct
         Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (get_ineq_basis c);
         Format.pp_print_string f "]";
         Format.pp_close_box f (); Format.pp_close_box f ();
-        Format.pp_force_newline f ();
+        (*Format.pp_force_newline f ();
         Format.pp_open_hbox f ();
         Format.pp_print_string f "Derived Ineqs:";
         Format.print_space ();
@@ -902,7 +902,7 @@ module Cone(C : Sigs.Coefficient) = struct
         Format.pp_open_box f 0;
         Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (BatList.of_enum (BatEnum.map (fun (_, _, (i, _)) -> i) (BatIMap.enum c.ineqs)));
         Format.pp_print_string f "]";
-        Format.pp_close_box f (); Format.pp_close_box f ()
+        Format.pp_close_box f (); Format.pp_close_box f ()*)
 
 end
 
