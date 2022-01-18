@@ -55,6 +55,8 @@ module type Polynomial = sig
   (*val normalize : poly -> poly*)
 end
 
+let (%) = BatPervasives.(%)
+
 module Make (C : Sigs.Coefficient) = struct
 
   module PP = PrePoly.Make(C)
@@ -94,6 +96,8 @@ module type Ideal = sig
 
     val get_generators : ideal -> poly list
 
+    val ppi_just : Format.formatter -> ideal -> unit
+
 end
 
 module Ideal (C : Sigs.Coefficient) = struct
@@ -102,27 +106,19 @@ module Ideal (C : Sigs.Coefficient) = struct
 
   type sorted_poly = poly * Mon.monic_mon list
 
+
+  type justPoly = sorted_poly * poly list
+
   type generators = 
-    | Top (*<1>*)
+    | Top of poly list (*<1>*)
     | Bot (*<0>*)
-    | I of sorted_poly list (*<p1,...,pn>*)
+    | I of justPoly list (*<p1,...,pn>*)
 
   type ideal = {
+    input: poly list;
     basis: generators;
     ord: Mon.monic_mon -> Mon.monic_mon -> int
-  }
-
-  (*let ppsp f (sp : sorted_poly) =
-    let folder (acc, first) (is_neg, m_s) =
-      if first && is_neg then "-" ^ m_s, false
-      else if first then m_s, false
-      else if is_neg then acc ^ " - " ^ m_s, false
-      else acc ^ " + " ^ m_s, false
-    in
-    let sorted_mon_list = List.map (fun m -> (BatHashtbl.find (fst sp) m), m) (snd sp) in
-    let str = fst (List.fold_left folder ("", true) (List.map Mon.mon_to_string sorted_mon_list)) in
-    Format.pp_print_string f (str ^ "\n")*)
-    
+  }    
 
   let make_sorted_poly ord p : sorted_poly = 
     let pc = BatHashtbl.copy p in
@@ -139,6 +135,8 @@ module Ideal (C : Sigs.Coefficient) = struct
       | Some c -> c, List.hd mons
       | None ->
         Log.log_line_s ~level:`trace "Found a mon not in tbl";
+        Log.log ~level:`trace ppmm (Some (List.hd mons));
+        Log.log ~level:`trace pp (Some p);
         BatHashtbl.find p (List.hd mons), (List.hd mons)
 
   let lc p = fst (lt p)
@@ -175,27 +173,31 @@ module Ideal (C : Sigs.Coefficient) = struct
     in
     (!reduction_occurred, aux f (List.map (fun _ -> (make_poly_from_mon Mon.zero)) divisors) ((make_poly_from_mon Mon.zero), []))
 
-  let s_poly ord f g =
+  let s_poly ord (f, fmults) (g, gmults) =
     let lcmlm = (Mon.from_string_c "1", Mon.lcm_of_mon (snd (lt f)) (snd (lt g))) in
     let f_m = Mon.divide_mon lcmlm (lt f) in
     let g_m = Mon.divide_mon lcmlm (lt g) in
     match (f_m, g_m) with
     | (Some f_t, Some g_t) ->
+      let fprod_lst = List.map (fun mult -> mult_mon_poly f_t mult) fmults in
+      let gprod_lst = List.map (fun mult -> mult_mon_poly g_t mult) gmults in
+      List.iter2 subtract fprod_lst gprod_lst;
       let ftf = mult_mon_poly f_t (fst f) in
       subtract ftf (mult_mon_poly g_t (fst g));
-      make_sorted_poly ord ftf
+      make_sorted_poly ord ftf, fprod_lst
     | _ -> failwith "shouldn't happen"
 
 
-  let minimize fs = 
+  let minimize (fs : justPoly list) = 
     let monic_grobner = List.map 
-      (fun poly -> 
+      (fun (poly, just) -> 
         let lc = lc poly in
         BatHashtbl.map_inplace (fun _ c -> Mon.divc c lc) (fst poly);
-        (fst poly), snd poly
+        List.iter (BatHashtbl.map_inplace (fun _ c -> Mon.divc c lc)) just;
+        ((fst poly), snd poly), just
       ) fs in
     let is_need poly l = 
-      let divides x = match Mon.divide_mon (lt poly) (lt x) with | Some _ -> true | None -> false in
+      let divides x = match Mon.divide_mon (lt (fst poly)) (lt (fst x)) with | Some _ -> true | None -> false in
       not (List.exists divides l)
     in
     let rec filter prev rest =
@@ -210,13 +212,14 @@ module Ideal (C : Sigs.Coefficient) = struct
     let min_basis = filter [] monic_grobner in
     if List.length min_basis = 0 then 
       Bot
-    else if List.exists (fun (p, _) -> is_const p) min_basis then
-      Top
-    else
-      I min_basis
+    else(
+      match List.find_opt (is_const % fst % fst) min_basis with
+      | Some (_, just) -> 
+        Top just
+      | None -> I min_basis)
 
   let improved_buchberger ord fs = 
-    let rec aux worklist g =
+    let rec aux worklist (g : justPoly list) =
       let t = (List.length g) - 1 in
       let criterion i j lcmu =
         let rec foo k =
@@ -228,7 +231,7 @@ module Ideal (C : Sigs.Coefficient) = struct
             if List.exists ((=) p1) worklist then foo (k+1)
             else if List.exists ((=) p2) worklist then foo (k+1)
             else
-              match Mon.divide_mon (lt (List.nth g k)) lcmu with
+              match Mon.divide_mon (lt (fst (List.nth g k))) lcmu with
               | None -> foo (k+1)
               | Some _ -> true
         in
@@ -236,23 +239,29 @@ module Ideal (C : Sigs.Coefficient) = struct
       in
       match worklist with
       | [] -> 
-        {basis = minimize g; ord}
+        {basis = minimize g; ord; input = fs}
       | (i, j) :: rest ->
         let (fi, fj) = (List.nth g i, List.nth g j) in
-        let lcmlt = Mon.lcm_of_mon (snd (lt fi)) (snd (lt fj)) in (* lt or lm? *)
-        let prod = (Mon.mult_mon (lt fi) (lt fj)) in
+        let (fip, fjp) = (fst fi, fst fj) in
+        let lcmlt = Mon.lcm_of_mon (snd (lt fip)) (snd (lt fjp)) in (* lt or lm? *)
+        let prod = (Mon.mult_mon (lt fip) (lt fjp)) in
         if criterion i j (Mon.from_string_c "1", lcmlt) then aux rest g
         else if Mon.lex_ord lcmlt (snd prod) = 0 then aux rest g (* criterion *)
         else (
-          let sp = s_poly ord fi fj in
-          let (_, (_, s)) = division ord g sp in
+          let sp, sp_just = s_poly ord fi fj in
+          let (_, (mults, s)) = division ord (List.map fst g) sp in
           if is_zero (fst s) then aux rest g
-          else if is_const (fst s) then {basis=Top; ord}
-          else 
-            aux (worklist @ (List.mapi (fun i _ -> (i, t+1)) g)) (g @ [s])
+          else
+            let mul_gs = List.map2 (fun m (_, bl) -> List.map (mul m) bl) mults g in
+            let neg_just = List.fold_left (fun acc ml -> List.iter2 (fun a m -> addi a m) acc ml; acc) (List.map negate sp_just) mul_gs in
+            let just = List.map negate neg_just in
+            if is_const (fst s) then {basis=Top just; ord; input = fs}
+            else 
+              aux (worklist @ (List.mapi (fun i _ -> (i, t+1)) g)) (g @ [s, just])
         )
     in
-    let norm_fs = List.map (make_sorted_poly ord) (List.rev (List.sort compare fs)) in
+    let input_len = List.length fs in
+    let norm_fs = List.mapi (fun i f -> make_sorted_poly ord f, List.init input_len (fun j -> if i = j then from_const_s "1" else from_const_s "0")) fs in
     let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
     let norm_g = aux (get_pairs (List.mapi (fun i _ -> i) norm_fs)) norm_fs in
     norm_g
@@ -262,42 +271,97 @@ module Ideal (C : Sigs.Coefficient) = struct
     Format.pp_print_string f "Ideal:";
     Format.print_space ();
     (match i.basis with
-     | Top -> Format.pp_print_string f "<1>"
+     | Top _ -> Format.pp_print_string f "<1>"
      | Bot -> Format.pp_print_string f "<0>"
      | I basis ->
         Format.pp_print_string f "<"; 
         Format.pp_open_box f 0;
-        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ","; Format.pp_print_space fo ()) (pp ~ord:i.ord) f (List.map fst basis);
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ","; Format.pp_print_space fo ()) (pp ~ord:i.ord) f (List.map (fun x -> fst (fst x)) basis);
         Format.pp_print_string f ">";
         Format.pp_close_box f ());
     Format.pp_close_box f ()
 
-  let pp_red ord f (p, basis, mults, rem) = 
-    let filtered_list = List.filter_map (fun (m, b) -> if is_zero m then None else Some (m, b)) (List.combine mults basis) in
-    if List.length filtered_list = 0 then ()
-    else 
-      (Format.pp_open_box f 0; (pp ~ord:ord) f p; 
-      Format.pp_print_break f 1 4;
-      Format.pp_print_string f "= ";
-      Format.pp_open_hvbox f 0;
-      (pp ~ord:ord) f rem; Format.pp_print_string f " +"; Format.pp_print_space f ();
+  let ppi_just f (i : ideal) = 
+    Format.pp_open_hbox f ();
+    Format.pp_print_string f "Theorem: ";
+    Format.pp_open_box f 0;
+    Format.pp_open_box f 0;
+    Format.pp_print_string f "<"; 
+    Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ","; Format.pp_print_space fo ()) (pp ~ord:i.ord) f i.input;
+    Format.pp_print_string f ">";
+    Format.pp_print_space f (); Format.pp_print_string f "="; Format.pp_print_space f (); Format.pp_close_box f ();
+    Format.pp_open_box f 0;
+    (match i.basis with
+     | Top _ -> Format.pp_print_string f "<1>"
+     | Bot -> Format.pp_print_string f "<0>"
+     | I basis ->
+        Format.pp_print_string f "<";
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ","; Format.pp_print_space fo ()) (pp ~ord:i.ord) f (List.map (fst % fst) basis);
+        Format.pp_print_string f ">");
+    Format.pp_close_box f ();
+    Format.pp_close_box f ();
+    Format.pp_close_box f ();
+    Format.pp_force_newline f ();
+
+    Format.pp_open_hbox f (); Format.pp_print_string f "Proof:";
+    let pp_eq foo (p, mults) = 
       let pp_mb fo (m, b) = 
         Format.pp_open_box fo 0; 
-        Format.pp_print_string fo "("; (pp ~ord:ord) fo m; Format.pp_print_string fo ")";
+        Format.pp_print_string fo "("; (pp ~ord:i.ord) fo m; Format.pp_print_string fo ")";
         Format.pp_print_break fo 1 4;
-        Format.pp_print_string fo "("; (pp ~ord:ord) fo b; Format.pp_print_string fo ")";
+        Format.pp_print_string fo "("; (pp ~ord:i.ord) fo b; Format.pp_print_string fo ")";
         Format.pp_close_box fo ()
       in
-      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_mb f filtered_list;
-      Format.pp_close_box f (); Format.pp_close_box f ())
+      Format.pp_open_hbox foo (); pp ~ord:i.ord foo p; Format.pp_print_space foo (); Format.pp_print_string foo "="; Format.pp_print_space foo ();
+      Format.pp_open_box foo 0;
+      Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo "+"; Format.pp_print_space fo ()) pp_mb foo mults;
+      Format.pp_close_box foo (); Format.pp_close_box foo ()
+    in
+    Format.pp_open_vbox f 0;
+    (match i.basis with
+    | Bot -> ()
+    | Top just ->
+      let just_filter = List.filter (not % is_zero % fst) (List.combine just i.input) in
+      pp_eq f (from_const_s "1", just_filter)
+    | I gens ->
+      let filtered_eqs = List.filter_map 
+        (fun ((p, _), j) -> 
+          let mults_filter = List.filter (not % is_zero % fst) (List.combine j i.input) in
+          if List.length (List.filter (is_one % fst) mults_filter) = 1 then None else Some (p, mults_filter)) gens in
+      Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_space fo ()) pp_eq f filtered_eqs);
+    Format.pp_print_space f ();
+    Format.pp_print_string f "QED";
+    Format.pp_close_box f ();
+    Format.pp_close_box f ()
+    
+
+
+
+  let pp_red ord f (p, basis, mults, rem) = 
+    let filtered_list = List.filter_map (fun (m, b) -> if is_zero m then None else Some (m, b)) (List.combine mults basis) in
+    let filtered_list = if List.length filtered_list = 0 then [from_const_s "0", from_const_s "0"] else filtered_list in
+    (Format.pp_open_box f 0; (pp ~ord:ord) f p; 
+    Format.pp_print_break f 1 4;
+    Format.pp_print_string f "= ";
+    Format.pp_open_hvbox f 0;
+    (pp ~ord:ord) f rem; Format.pp_print_string f " +"; Format.pp_print_space f ();
+    let pp_mb fo (m, b) = 
+      Format.pp_open_box fo 0; 
+      Format.pp_print_string fo "("; (pp ~ord:ord) fo m; Format.pp_print_string fo ")";
+      Format.pp_print_break fo 1 4;
+      Format.pp_print_string fo "("; (pp ~ord:ord) fo b; Format.pp_print_string fo ")";
+      Format.pp_close_box fo ()
+    in
+    Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_mb f filtered_list;
+    Format.pp_close_box f (); Format.pp_close_box f ())
 
   let reduce p (i : ideal) : poly = 
     match i.basis with
-    | Top ->
+    | Top _->
       from_const_s "0"
     | Bot -> p
     | I basis -> 
-      let (_, (_, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
+      let (_, (_, rem)) = division i.ord (List.map fst basis) (make_sorted_poly i.ord p) in
       (*let (reduction_occurred, (mults, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
       if not reduction_occurred then Log.log ~level:`trace (pp_red i.ord) None
       else Log.log ~level:`trace (pp_red i.ord) (Some (p, List.map fst basis, mults, fst rem));*)
@@ -305,34 +369,34 @@ module Ideal (C : Sigs.Coefficient) = struct
 
   let reduce_just p (i : ideal) =
     match i.basis with
-    | Top -> from_const_s "0", [from_const_s "1"]
+    | Top _-> from_const_s "0", [from_const_s "1"]
     | Bot -> p, [from_const_s "0"]
     | I basis ->
-      let (_, (mults, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
+      let (_, (mults, rem)) = division i.ord (List.map fst basis) (make_sorted_poly i.ord p) in
       fst rem, mults
 
 
   let make_ideal ord eqs : ideal = 
-    let normal = List.filter (fun p -> not (is_zero p)) eqs in
+    let normal = List.filter (not % is_zero) eqs in
     if List.length normal = 0 || List.for_all is_zero normal then 
-      {basis = Bot; ord}
+      {basis = Bot; ord; input = normal}
     else if List.exists is_const normal then 
-      {basis = Top; ord}
+      {basis = Top [from_const_s "1"]; ord; input = [from_const_s "1"]}
     else 
       improved_buchberger ord normal
      
 
   let mem p i =
     match i.basis with
-    | Top -> true
+    | Top _-> true
     | Bot -> false
     | I _ -> is_zero (reduce p i)
 
   let get_generators (i : ideal) : poly list = 
     match i.basis with
-    | Top -> [from_const_s "1"]
+    | Top _ -> [from_const_s "1"]
     | Bot -> [from_const_s "0"]
-    | I basis -> List.map fst basis
+    | I basis -> List.map (fst % fst) basis
 
 end
 
@@ -601,11 +665,12 @@ module Cone(C : Sigs.Coefficient) = struct
       Format.pp_force_newline f ();
       Format.pp_close_box f ()
     | Product (eq_just, prods) ->
-      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_force_newline fo ()) (pp_just c) f prods;
+      let uniq_ths = BatList.of_enum (BatEnum.uniq (BatList.enum prods)) in
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_force_newline fo ()) (pp_just c) f uniq_ths;
       Format.pp_open_hbox f (); Format.pp_print_string f "Theorem "; Format.pp_print_int f ineq_id; Format.pp_print_string f ":";
       pp ~ord:c.ideal.ord f ineq; Format.pp_print_string f " >= 0"; Format.pp_close_box f (); Format.pp_force_newline f ();
       Format.pp_open_box f 0; Format.pp_print_string f "Proof:"; Format.pp_open_vbox f 0; Format.pp_print_space f ();
-      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) (pp_used_th c) f prods; Format.pp_print_space f ();
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) (pp_used_th c) f uniq_ths; Format.pp_print_space f ();
       let pp_par fo id = 
         Format.pp_print_string fo "("; pp ~ord:c.ideal.ord fo (fst (BatIMap.find id c.ineqs)); Format.pp_print_string fo ")"
       in

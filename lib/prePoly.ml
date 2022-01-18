@@ -33,6 +33,10 @@ module MakeMon (C : Sigs.Coefficient) = struct
       if m = [] then true
       else failwith "Monomial has zero coefficient but is not empty"
     else false
+
+  let is_one (c, m) =
+    if C.is_one c && m = [] then true
+    else false
   
   (*let get_monic_mon (N (_, mon)) = mon
   
@@ -124,7 +128,7 @@ module MakeMon (C : Sigs.Coefficient) = struct
       else false, c
     in
     if m = [] then is_neg, to_string_c norm_c
-    else if is_one norm_c then is_neg, (monic_mon_to_string m)
+    else if C.is_one norm_c then is_neg, (monic_mon_to_string m)
     else is_neg, (to_string_c norm_c) ^ (monic_mon_to_string m)
 
   let is_const ((_, m) : mon) = m = []
@@ -166,6 +170,7 @@ module MakeP (M : sig
               val make_mon_from_coef : coef -> mon
               val make_mon_from_var : string -> int -> mon
               val is_zero : mon -> bool
+              val is_one : mon -> bool
               val zero : mon
               val ord : (monic_mon -> monic_mon -> int) ref
               val minus_1 : mon
@@ -313,6 +318,11 @@ module MakeP (M : sig
     else
       let mons = get_mons p in
       BatEnum.for_all M.is_zero mons
+
+  let is_one (p : poly) = 
+    if BatHashtbl.length p = 0 then false
+    else
+      BatEnum.for_all M.is_one (get_mons p)
 
   let is_const (p : poly) = 
     if BatHashtbl.length p = 0 then true

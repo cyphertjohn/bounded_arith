@@ -372,7 +372,7 @@ let rewrite ?sat:(sat=3) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_
     let (new_eqs, new_ineqs, new_t, new_map) = update_map ideal t_map tp (I.get_generators ideal) ineq in
     Log.log_line_s ~level:`trace "Next ideal";
     let new_ideal = calc_ideal t_map (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (tp::new_eqs @ new_ineqs)))) new_eqs in
-    Log.log ~level:`debug I.ppi (Some new_ideal);
+    Log.log ~level:`debug I.ppi_just (Some new_ideal);
     new_map, new_t, new_ideal, new_ineqs
   in
   let rec loop old_map t_map tp ideal inequalities =
