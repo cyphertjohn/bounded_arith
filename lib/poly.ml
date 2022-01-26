@@ -98,6 +98,8 @@ module type Ideal = sig
 
     val ppi_just : Format.formatter -> ideal -> unit
 
+    val equal : ideal -> ideal -> bool
+
 end
 
 module Ideal (C : Sigs.Coefficient) = struct
@@ -127,6 +129,23 @@ module Ideal (C : Sigs.Coefficient) = struct
     (pc, sorted_monics)
 
   
+  let compare_sorted ord (p1, mon_list1) (p2, mon_list2) = 
+    let rec aux ml1 ml2 = 
+      match ml1, ml2 with
+      | [], [] -> 0
+      | [], _ -> -1
+      | _, [] -> 1
+      | m1 :: m1s, m2 :: m2s ->
+        let cmp_res = ord m1 m2 in
+        if cmp_res <> 0 then cmp_res
+        else
+          let m1c, m2c = BatHashtbl.find p1 m1, BatHashtbl.find p2 m2 in
+          let coef_cmp = Mon.cmp m1c m2c in
+          if coef_cmp <> 0 then coef_cmp
+          else aux m1s m2s
+    in
+    aux mon_list1 mon_list2
+
 
   let lt ((p, mons) : sorted_poly) = 
     if List.length mons = 0 then Mon.zero
@@ -287,7 +306,7 @@ module Ideal (C : Sigs.Coefficient) = struct
     Format.pp_open_box f 0;
     Format.pp_open_box f 0;
     Format.pp_print_string f "<"; 
-    Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ","; Format.pp_print_space fo ()) (pp ~ord:i.ord) f i.input;
+    Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ","; Format.pp_print_space fo ()) (pp ~ord:i.ord) f (List.rev i.input);
     Format.pp_print_string f ">";
     Format.pp_print_space f (); Format.pp_print_string f "="; Format.pp_print_space f (); Format.pp_close_box f ();
     Format.pp_open_box f 0;
@@ -385,6 +404,33 @@ module Ideal (C : Sigs.Coefficient) = struct
     else 
       improved_buchberger ord normal
      
+
+  let equal i1 i2 = 
+    match i1.basis, i2.basis with
+    | Bot, Bot -> true
+    | Top _, Top _ -> true
+    | I b1, I b2 ->
+      let b1s, b2s = List.map fst b1, List.map fst b2 in
+      if List.length b1s <> List.length b2s then false
+      else
+        let b1ss, b2ss = List.sort (compare_sorted Mon.lex_ord) b1s, List.sort (compare_sorted Mon.lex_ord) b2s in
+        let rec eq (p1, p1l) (p2, p2l) = 
+          match p1l, p2l with
+          | [], [] -> true
+          | [], _ -> false
+          | _, [] -> false
+          | p1m :: p1ls, p2m :: p2ls ->
+            if p1m = p2m then 
+              let p1c, p2c = BatHashtbl.find p1 p1m, BatHashtbl.find p2 p2m in
+              let coef_cmp = Mon.cmp p1c p2c in
+              if coef_cmp <> 0 then false
+              else eq (p1, p1ls) (p2, p2ls)
+            else false
+        in
+        let eqs = List.map2 eq b1ss b2ss in
+        List.for_all (fun x -> x) eqs
+    | _ -> false
+
 
   let mem p i =
     match i.basis with
