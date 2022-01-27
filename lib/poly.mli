@@ -115,6 +115,10 @@ module type Ideal = sig
     (** Get the generators (Grobner basis) of an ideal. *)
     val get_generators : ideal -> poly list
 
+    val ppi : Format.formatter -> ideal -> unit
+
+    val equal : ideal -> ideal -> bool
+
 end
 
 (** An ideal of polynomial generators p_1, ..., p_n, is the set of polynomials f such that f = a_1p_1 + ... + a_np_n

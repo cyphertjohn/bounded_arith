@@ -196,12 +196,11 @@ let inst_floor_recip map =
   in
   S.fold folder map ([], [])
 
-    
-
-(*let effective_deg_ord deg_map keep_map pure_vars top_order a b =
+(*
+let effective_deg_ord deg_map keep_map _ top_order a b =
   let a_vars = P.get_vars_m a in
   let b_vars = P.get_vars_m b in
-  let (avd, bvd) = (BatEnum.map (fun v -> v, P.get_degree v a) a_vars, BatEnum.map (fun v -> v, P.get_degree v b) b_vars) in
+  let (avd, bvd) = (BatList.of_enum (BatEnum.map (fun v -> v, P.get_degree v a) a_vars), BatList.of_enum (BatEnum.map (fun v -> v, P.get_degree v b) b_vars)) in
   let folder (rem_deg, keep_deg) (v, d) = 
     if S.find v keep_map then 
       if S.mem v deg_map then (rem_deg, keep_deg + d * (S.find v deg_map))
@@ -210,19 +209,17 @@ let inst_floor_recip map =
       if S.mem v deg_map then (rem_deg + d * (S.find v deg_map), keep_deg)
       else (rem_deg + d, keep_deg)
   in
-  let (a_deg, b_deg) = (BatEnum.fold folder (0, 0) avd, BatEnum.fold folder (0, 0) bvd) in
+  let (a_deg, b_deg) = (List.fold_left folder (0, 0) avd, List.fold_left folder (0, 0) bvd) in
   if (fst a_deg = fst b_deg) then 
     if (snd a_deg = snd b_deg) then
       let cmp_var (x, xe) (y, ye) = 
         if x = y then compare xe ye
-        else if VS.mem x pure_vars then
-          if VS.mem y pure_vars then
-            let x_ind = fst (List.find (fun (_, v) -> v = x) top_order) in
-            let y_ind = fst (List.find (fun (_, v) -> v = y) top_order) in
-            compare x_ind y_ind
-          else 1
-        else if VS.mem y pure_vars then -1
-        else compare x y
+        else 
+          match (List.find_opt (fun (_, v) -> v = x) top_order, List.find_opt (fun (_, v) -> v = y) top_order) with
+          | None, None -> compare x y
+          | None, Some _ -> -1
+          | Some _, None -> 1
+          | Some (x_ind, _), Some (y_ind, _) -> compare x_ind y_ind
       in
       let rec well_formed_lex al bl =
         match al, bl with
@@ -234,7 +231,7 @@ let inst_floor_recip map =
           if cmp_res = 0 then well_formed_lex xs ys
           else cmp_res
       in
-      let (a_s, b_s) = (List.rev (List.sort cmp_var (BatList.of_enum avd)), List.rev (List.sort cmp_var (BatList.of_enum bvd))) in
+      let (a_s, b_s) = (List.rev (List.sort cmp_var avd), List.rev (List.sort cmp_var bvd)) in
       well_formed_lex a_s b_s
     else compare (snd a_deg) (snd b_deg)
   else compare (fst a_deg) (fst b_deg)*)
@@ -375,11 +372,11 @@ let rewrite ?sat:(sat=3) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_
     Log.log ~level:`trace I.ppi (Some new_ideal);
     new_map, new_t, new_ideal, new_ineqs
   in
-  let rec loop old_map t_map tp ideal inequalities =
+  let rec loop old_map t_map tp old_ideal ideal inequalities =
     if P.is_const tp then 
       let unpure_t, _ = unpurify [tp] t_map in
       List.hd unpure_t
-    else if equal_t_map old_map t_map then 
+    else if equal_t_map old_map t_map && I.equal old_ideal ideal then 
       let (inequ, impls) = inst_floor_recip t_map in
       let cone = C.make_cone_i ~sat:sat ~ineqs:(inequalities @ inequ) ~impls:impls ideal in
       Log.log ~level:`debug C.ppc (Some cone);
@@ -388,12 +385,12 @@ let rewrite ?sat:(sat=3) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_
       List.hd (unpure_t)
     else
       let (new_map, new_t, new_ideal, new_ineqs) = iteration t_map tp ideal inequalities in
-      loop t_map new_map new_t new_ideal new_ineqs
+      loop t_map new_map new_t ideal new_ideal new_ineqs
   in
   Log.log_line_s ~level:`trace "Initial ideal";
   let ideal = calc_ideal term_map (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (t_p::eqs @ ineqs)))) eqs in
   Log.log ~level:`trace I.ppi (Some ideal);
   let (new_map, new_t, new_ideal, new_ineqs) = iteration term_map t_p ideal ineqs in
-  loop term_map new_map new_t new_ideal new_ineqs
+  loop term_map new_map new_t ideal new_ideal new_ineqs
 
   

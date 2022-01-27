@@ -55,6 +55,8 @@ module type Polynomial = sig
   (*val normalize : poly -> poly*)
 end
 
+let (%) = BatPervasives.(%)
+
 module Make (C : Sigs.Coefficient) = struct
 
   module PP = PrePoly.Make(C)
@@ -95,6 +97,10 @@ module type Ideal = sig
     val reduce : poly -> ideal -> poly
 
     val get_generators : ideal -> poly list
+
+    val ppi : Format.formatter -> ideal -> unit
+
+    val equal : ideal -> ideal -> bool
 
 end
 
@@ -274,24 +280,24 @@ module Ideal (C : Sigs.Coefficient) = struct
         Format.pp_close_box f ());
     Format.pp_close_box f ()
 
+
   let pp_red ord f (p, basis, mults, rem) = 
     let filtered_list = List.filter_map (fun (m, b) -> if is_zero m then None else Some (m, b)) (List.combine mults basis) in
-    if List.length filtered_list = 0 then ()
-    else 
-      (Format.pp_open_box f 0; (pp ~ord:ord) f p; 
-      Format.pp_print_break f 1 4;
-      Format.pp_print_string f "= ";
-      Format.pp_open_hvbox f 0;
-      (pp ~ord:ord) f rem; Format.pp_print_string f " +"; Format.pp_print_space f ();
-      let pp_mb fo (m, b) = 
-        Format.pp_open_box fo 0; 
-        Format.pp_print_string fo "("; (pp ~ord:ord) fo m; Format.pp_print_string fo ")";
-        Format.pp_print_break fo 1 4;
-        Format.pp_print_string fo "("; (pp ~ord:ord) fo b; Format.pp_print_string fo ")";
-        Format.pp_close_box fo ()
-      in
-      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_mb f filtered_list;
-      Format.pp_close_box f (); Format.pp_close_box f ())
+    let filtered_list = if List.length filtered_list = 0 then [from_const_s "0", from_const_s "0"] else filtered_list in
+    (Format.pp_open_box f 0; (pp ~ord:ord) f p; 
+    Format.pp_print_break f 1 4;
+    Format.pp_print_string f "= ";
+    Format.pp_open_hvbox f 0;
+    (pp ~ord:ord) f rem; Format.pp_print_string f " +"; Format.pp_print_space f ();
+    let pp_mb fo (m, b) = 
+      Format.pp_open_box fo 0; 
+      Format.pp_print_string fo "("; (pp ~ord:ord) fo m; Format.pp_print_string fo ")";
+      Format.pp_print_break fo 1 4;
+      Format.pp_print_string fo "("; (pp ~ord:ord) fo b; Format.pp_print_string fo ")";
+      Format.pp_close_box fo ()
+    in
+    Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_mb f filtered_list;
+    Format.pp_close_box f (); Format.pp_close_box f ())
 
   let reduce p (i : ideal) : poly = 
     match i.basis with
@@ -315,7 +321,7 @@ module Ideal (C : Sigs.Coefficient) = struct
 
 
   let make_ideal ord eqs : ideal = 
-    let normal = List.filter (fun p -> not (is_zero p)) eqs in
+    let normal = List.filter (not % is_zero) eqs in
     if List.length normal = 0 || List.for_all is_zero normal then 
       {basis = Bot; ord}
     else if List.exists is_const normal then 
@@ -717,11 +723,12 @@ module Cone(C : Sigs.Coefficient) = struct
       Format.pp_force_newline f ();
       Format.pp_close_box f ()
     | Product (eq_just, prods) ->
-      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_force_newline fo ()) (pp_just c) f prods;
+      let uniq_ths = BatList.of_enum (BatEnum.uniq (BatList.enum prods)) in
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_force_newline fo ()) (pp_just c) f uniq_ths;
       Format.pp_open_hbox f (); Format.pp_print_string f "Theorem "; Format.pp_print_int f ineq_id; Format.pp_print_string f ":";
       pp ~ord:c.ideal.ord f ineq; Format.pp_print_string f " >= 0"; Format.pp_close_box f (); Format.pp_force_newline f ();
       Format.pp_open_box f 0; Format.pp_print_string f "Proof:"; Format.pp_open_vbox f 0; Format.pp_print_space f ();
-      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) (pp_used_th c) f prods; Format.pp_print_space f ();
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) (pp_used_th c) f uniq_ths; Format.pp_print_space f ();
       let pp_par fo id = 
         Format.pp_print_string fo "("; pp ~ord:c.ideal.ord fo (fst (BatIMap.find id c.ineqs)); Format.pp_print_string fo ")"
       in
