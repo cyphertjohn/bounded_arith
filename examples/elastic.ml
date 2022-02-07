@@ -28,11 +28,11 @@ let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite [t1;t2
 
 *)
 
-let t1 = from_string "x - v b /e"
+let t1 = from_string "x - floor(v b /e)"
 let t2 = from_string "a2 - floor(a b / e)"
 let t3 = from_string "ep - e - a"
 let t4 = from_string "bp - b - a2"
-let t5 = from_string "y - v bp / ep"
+let t5 = from_string "y - floor(v bp / ep)"
 
 let vars_to_keep = ["v"; "a"; "e"; "b"]
 
@@ -45,7 +45,7 @@ let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite [t1;t2
   						  	from_string "a";
 						  ] 
 						  vars_to_keep)
-   						  (from_string "floor(x) - floor(y)")
+   						  (from_string "x - y")
 
 let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite [t1;t2;t3;t4;t5] 
 									  [
@@ -53,7 +53,7 @@ let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite [t1;t2
 									  	from_string "e";
 										from_string "a"
 									  ] 
-									  vars_to_keep) (from_string "floor(y) - floor(x)")
+									  vars_to_keep) (from_string "y - x")
 
 
 
