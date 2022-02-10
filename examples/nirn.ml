@@ -19,7 +19,7 @@ let transferYAfterX = List.map from_string [
 					"balance - valueAtLastCollectionPriceY - profitY";
 					"floor(profitY * performanceFee / E18) - feesY";
 					"floor(feesY * supplyX / (balance - feesY)) - equivalentSharesY";
-					(* from_string "supplyX + equivalentSharesY - supplyY" *)
+					"supplyX + equivalentSharesY - supplyY";
 					"floor((x * supplyY) / (balance)) - sharesY";
 				]
 
