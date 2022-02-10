@@ -2,64 +2,28 @@ open Bound.Expr
 
 let () = Bound.Log.log_times := true
 
-let vars_to_keep = ["supply0"; "priceAtLastFee0"; "performanceFee"; "totalBalance0"; "x"; "y"; "E18"]
+let vars_to_keep = ["supply0"; (* "priceAtLastFee0"; *) "performanceFee"; "balance"; "x"; (* "y"; *) "E18"]
 
 let transferX = List.map from_string [
-					(** transfer x **)
-					(* transfer from - ignored. total balance remains the same. *)
-					(* calculate fee *)
-						"floor(supply0 priceAtLastFee0 / E18)  - valueAtLastCollectionPriceX";
-						"floor((totalBalance0 - valueAtLastCollectionPriceX) performanceFee) - totalFeesX";
-						"floor(totalFeesX supply0 / (totalBalance0 - totalFeesX)) - equivalentSharesX";
-						(* mint *)
-							"supply0 + equivalentSharesX - supplyXmid";
-							"totalBalance0 - totalBalanceXmid"; (* "totalBalance0 + equivalentSharesX - totalBalanceXmid"; *)
-						(* rest of calculate fee *)
-						"floor((totalBalance0 E18) / (supplyXmid)) - priceAtLastFeeX";
-					(* rest of transfer x *)
-					"floor((x supplyXmid) / (totalBalanceXmid)) - sharesX";
-					(* mint *)
-						"supplyXmid + sharesX - supplyX";
-						"totalBalanceXmid - totalBalanceX"; (* "totalBalanceXmid + sharesX - totalBalanceX"; *)
+					"balance - valueAtLastCollectionPriceX";
+					"balance - valueAtLastCollectionPriceX - profitX";
+					"floor(profitX * performanceFee / E18) - feesX";
+					"floor(feesX * supply0 / (balance - feesX)) - equivalentSharesX";
+					"supply0 + equivalentSharesX - supplyX";
+					"floor((x * supplyX) / (balance)) - sharesX";
+
+					"floor(balance * E18 / supplyX) - priceAtLastFeeX";
 				] 
 let transferYAfterX = List.map from_string [
-					(** transfer y **)
-					(* transfer from - ignored. total balance remains the same. *)
-					(* calculate fee *)
-						"floor(supplyX priceAtLastFeeX / E18)  - valueAtLastCollectionPriceY";
-						"floor((totalBalanceX - valueAtLastCollectionPriceY) performanceFee) - totalFeesY";
-						"floor(totalFeesY supplyX / (totalBalanceX - totalFeesY)) - equivalentSharesY";
-						(* mint *)
-							"supplyX + equivalentSharesY - supplyYmid";
-							"totalBalanceX - totalBalanceYmid"; (* "totalBalanceX + equivalentSharesY - totalBalanceYmid"; *)
-						(* rest of calculate fee *)
-						"floor((totalBalanceX E18) / (supplyYmid)) - priceAtLastFeeY";
-					(* rest of transfer y *)
-					"floor((y supplyYmid) / (totalBalanceYmid)) - sharesY";
-					(* mint *)
-						"supplyYmid + sharesY - supplyY";
-						"totalBalanceYmid - totalBalanceY"; (* "totalBalanceYmid + sharesY - totalBalanceY"; *)
-				] 
-let transferXplusY = List.map from_string [
-					(** transfer x + y **)
-					(* transfer from - ignored. total balance remains the same. *)
-					(* calculate fee *)
-						"floor(supply0 priceAtLastFee0 / E18)  - valueAtLastCollectionPriceXY";
-						"floor((totalBalance0 - valueAtLastCollectionPriceXY) performanceFee) - totalFeesXY";
-						"floor(totalFeesX supply0 / (totalBalance0 - totalFeesXY)) - equivalentSharesXY";
-						(* mint *)
-							"supply0 + equivalentSharesXY - supplyXYmid";
-							"totalBalance0 - totalBalanceXYmid"; (* "totalBalance0 + equivalentSharesXY - totalBalanceXYmid"; *)
-						(* rest of calculate fee *)
-						"floor((totalBalance0 E18) / (supplyXYmid)) - priceAtLastFeeXY";
-					(* rest of transfer x + y *)
-					"floor(((x+y) supplyXYmid) / (totalBalanceXYmid)) - sharesXY";
-					(* mint *)
-						"supplyXYmid + sharesXY - supplyXY";
-						"totalBalanceXYmid - totalBalanceXY"; (* "totalBalanceXYmid + sharesXY - totalBalanceXY"; *)
-				] 
+					"floor(supply * priceAtLastFeeX / E18) - valueAtLastCollectionPriceY"; (* "balance - valueAtLastCollectionPriceY"; *)
+					"balance - valueAtLastCollectionPriceY - profitY";
+					"floor(profitY * performanceFee / E18) - feesY";
+					"floor(feesY * supplyX / (balance - feesY)) - equivalentSharesY";
+					(* from_string "supplyX + equivalentSharesY - supplyY" *)
+					"floor((x * supplyY) / (balance)) - sharesY";
+				]
 
-let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite (transferX @ transferYAfterX @ transferXplusY)
-						  [] 
+let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite ~sat:1 (transferX @ transferYAfterX)
+						  (List.map from_string ["supply0"; (* "priceAtLastFee0"; *) "performanceFee"; "balance"; "x"; "E18"])
 						  vars_to_keep)
-   						  (from_string "totalBalanceXY - totalBalanceY")
+   						  (from_string "sharesX - sharesY")
