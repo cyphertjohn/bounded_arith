@@ -9,7 +9,7 @@ let vars_to_keep = ["minimumPrice"; "startPrice"; "startTime"; "endTime"; "t1"]
 
 let () = Bound.Log.log_times := true
 
-let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite [t1;t2;t3] 
+let tupper = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite [t1;t2;t3] 
 									  [from_string "startPrice - minimumPrice";
 									  	from_string "endTime - startTime";
 									  	from_string "t1 - startTime"]
@@ -17,7 +17,7 @@ let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite [t1;t2
 									  (from_string "price1")
   
 
-let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite [t1;t2;t3] 
+let tlower = Bound.Log.log_time "Rewrite lower" (Bound.Rewriter.rewrite [t1;t2;t3] 
 									  [from_string "startPrice - minimumPrice";
 									  	from_string "endTime - startTime";
 									  	from_string "t1 - startTime";
@@ -31,7 +31,7 @@ let t3_2 = from_string "startPrice - diff2 - price2"
 
   (*let vars_to_keep_2 = "telapsed" :: vars_to_keep in*)
 
-let tmonotone = Bound.Log.log_time "Rewrite monotone" (Bound.EqRewriter.rewrite [t1;t2;t3;t1_2;t2_2;t3_2;] 
+let tmonotone = Bound.Log.log_time "Rewrite monotone" (Bound.Rewriter.rewrite [t1;t2;t3;t1_2;t2_2;t3_2;] 
 									  [from_string "startPrice - minimumPrice";
 									  	from_string "endTime - startTime";
 									  	from_string "t1 - startTime";

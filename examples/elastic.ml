@@ -38,7 +38,7 @@ let vars_to_keep = ["v"; "a"; "e"; "b"]
 
 let () = Bound.Log.log_times := true
 
-let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite [t1;t2;t3;t4;t5] 
+let tupper = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite [t1;t2;t3;t4;t5] 
 						  [
 							from_string "v";
 						  	from_string "e";
@@ -47,7 +47,7 @@ let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite [t1;t2
 						  vars_to_keep)
    						  (from_string "floor(x) - floor(y)")
 
-let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite [t1;t2;t3;t4;t5] 
+let tlower = Bound.Log.log_time "Rewrite lower" (Bound.Rewriter.rewrite [t1;t2;t3;t4;t5] 
 									  [
 									  	from_string "v";
 									  	from_string "e";

@@ -59,7 +59,7 @@ let transferXplusY = List.map from_string [
 						"totalBalanceXYmid - totalBalanceXY"; (* "totalBalanceXYmid + sharesXY - totalBalanceXY"; *)
 				] 
 
-let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite (transferX @ transferYAfterX @ transferXplusY)
+let tupper = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite (transferX @ transferYAfterX @ transferXplusY)
 						  [] 
 						  vars_to_keep)
    						  (from_string "totalBalanceXY - totalBalanceY")

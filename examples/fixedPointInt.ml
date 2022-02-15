@@ -2,7 +2,7 @@ open Bound.Expr
 
 let vars_to_keep = ["a"; "b"; "sf"]
 
-let tmuldivinv_upper = Bound.Log.log_time "Rewrite mult/div upper" (Bound.EqRewriter.rewrite [] 
+let tmuldivinv_upper = Bound.Log.log_time "Rewrite mult/div upper" (Bound.Rewriter.rewrite [] 
 									  [
 										from_string "sf";
 										from_string "b";
@@ -14,7 +14,7 @@ utop # to_string tmuldivinv_upper;;
 - : string = "a" 
 *)
 
-let tmuldivinv_lower = Bound.Log.log_time "Rewrite mult/div lower" (Bound.EqRewriter.rewrite [] 
+let tmuldivinv_lower = Bound.Log.log_time "Rewrite mult/div lower" (Bound.Rewriter.rewrite [] 
 									  [
 										from_string "sf";
 										from_string "b";
@@ -26,7 +26,7 @@ utop # to_string tmuldivinv_lower;;
 - : string = "1 - a + b^(-1)sf" 
 *)
 
-let tdivmulinv_upper = Bound.Log.log_time "Rewrite div/mult upper" (Bound.EqRewriter.rewrite [] 
+let tdivmulinv_upper = Bound.Log.log_time "Rewrite div/mult upper" (Bound.Rewriter.rewrite [] 
 									  [
 										from_string "sf";
 										from_string "b";
@@ -38,7 +38,7 @@ utop # to_string tdivmulinv_upper;;
 - : string = "a" 
 *)
 
-let tdivmulinv_lower = Bound.Log.log_time "Rewrite div/mult lower" (Bound.EqRewriter.rewrite [] 
+let tdivmulinv_lower = Bound.Log.log_time "Rewrite div/mult lower" (Bound.Rewriter.rewrite [] 
 									  [
 										from_string "sf";
 										from_string "b";
