@@ -196,7 +196,6 @@ let inst_floor_recip map =
   in
   S.fold folder map ([], [])
 
-(*
 let effective_deg_ord deg_map keep_map _ top_order a b =
   let a_vars = P.get_vars_m a in
   let b_vars = P.get_vars_m b in
@@ -234,7 +233,7 @@ let effective_deg_ord deg_map keep_map _ top_order a b =
       let (a_s, b_s) = (List.rev (List.sort cmp_var avd), List.rev (List.sort cmp_var bvd)) in
       well_formed_lex a_s b_s
     else compare (snd a_deg) (snd b_deg)
-  else compare (fst a_deg) (fst b_deg)*)
+  else compare (fst a_deg) (fst b_deg)
 
 let unpurify polys term_map =
   let unpure_map, top_order = unpurify_map term_map in
@@ -336,7 +335,7 @@ let equal_t_map a b =
   
 (** Compute an upper bound for t over the variables in vars_to_keep,
     provided the equalities tx = 0 for all tx in terms. *)
-let rewrite ?sat:(sat=3) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_to_keep (t : Expr.qexpr) = 
+let rewrite ?sat:(sat=3) ?fgb:(fgb=true) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_to_keep (t : Expr.qexpr) = 
   let fold_eqs (old_eqs, old_tmap, old_pure_vars) term =
     let (eq, derived_eqs, tmap, pure_vars) = purify term in
     (eq :: old_eqs @ derived_eqs, S.union (fun _ _ _ -> failwith "duplicate in term map") old_tmap tmap, VS.union old_pure_vars pure_vars)
@@ -359,7 +358,8 @@ let rewrite ?sat:(sat=3) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_
   let calc_ideal t_map all_vars eqs = 
     let deg_map, top_order = calc_deg_map t_map in
     let keep_map = BatEnum.fold keep_folder (calc_keep_vars t_map vars_to_keep) all_vars in
-    I.make_ideal_f deg_map keep_map top_order eqs
+    if fgb then I.make_ideal_f deg_map keep_map top_order eqs
+    else I.make_ideal (effective_deg_ord deg_map keep_map pure_vars top_order) eqs
   in
 
   let iteration t_map tp ideal ineq =
