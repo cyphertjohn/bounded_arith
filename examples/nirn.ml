@@ -23,12 +23,12 @@ let transferYAfterX = List.map from_string [
 					"floor((x * supplyY) / (balance)) - sharesY";
 				]
 
-let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite ~sat:3 (transferX @ transferYAfterX @ [from_string "10^18 - E18"])
+let tupper = Bound.Log.log_time "Rewrite upper" (Bound.EqRewriter.rewrite ~sat:3 (transferX @ transferYAfterX @ [from_string "10^2 - E18"])
 						  (List.map from_string ["supply0"; (* "priceAtLastFee0"; *) "performanceFee"; "balance"; "x"; "E18"])
 						  vars_to_keep)
    						  (from_string "sharesX - sharesY")
 
-let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite ~sat:3 (transferX @ transferYAfterX @ [from_string "10^18 - E18"])
+let tlower = Bound.Log.log_time "Rewrite lower" (Bound.EqRewriter.rewrite ~sat:3 (transferX @ transferYAfterX @ [from_string "10^2 - E18"])
 						  (List.map from_string ["supply0"; (* "priceAtLastFee0"; *) "performanceFee"; "balance"; "x"; "E18"])
 						  vars_to_keep)
    						  (from_string "sharesY - sharesX")
