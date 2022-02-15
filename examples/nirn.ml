@@ -9,17 +9,17 @@ let transferX = List.map from_string [
 					"balance - valueAtLastCollectionPriceX - profitX";
 					"floor(profitX * performanceFee / E18) - feesX";
 					"floor(feesX * supply0 / (balance - feesX)) - equivalentSharesX"; *)
-					"supply0 - supplyX";
-					"floor((x * supplyX) / (balance)) - sharesX";
+					(* "supply0 - supplyX"; *)
+					"floor((x * supply0) / (balance)) - sharesX";
 
-					"floor(balance * E18 / supplyX) - priceAtLastFeeX";
+					"floor(balance * E18 / supply0) - priceAtLastFeeX";
 				] 
 let transferYAfterX = List.map from_string [
-					"floor(supply0 * priceAtLastFeeX / E18) - valueAtLastCollectionPriceY"; (* "balance - valueAtLastCollectionPriceY"; *)
-					"balance - valueAtLastCollectionPriceY - profitY";
-					"floor(profitY * performanceFee / E18) - feesY";
-					"floor(feesY * supplyX / (balance - feesY)) - equivalentSharesY";
-					"supplyX + equivalentSharesY - supplyY";
+					(* "floor(supply0 * priceAtLastFeeX / E18) - valueAtLastCollectionPriceY"; (* "balance - valueAtLastCollectionPriceY"; *) *)
+					(* "balance - (floor(supply0 * priceAtLastFeeX / E18)) - profitY"; *)
+					"floor((balance - (floor(supply0 * priceAtLastFeeX / E18))) * performanceFee / E18) - feesY";
+					"floor(feesY * supply0 / (balance - feesY)) - equivalentSharesY";
+					"supply0 + equivalentSharesY - supplyY";
 					"floor((x * supplyY) / (balance)) - sharesY";
 				]
 
