@@ -39,7 +39,7 @@ module type Polynomial = sig
   val is_zero : poly -> bool
 
   (** Test if a polynomial is constant. *)
-  val is_const : poly -> bool
+  val is_const : poly -> coef option
 
   (** Polynomial comparison. The result does not correspond to any arithmetic order.*)
   val compare : poly -> poly -> int

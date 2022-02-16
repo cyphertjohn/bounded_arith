@@ -30,7 +30,7 @@ module type Polynomial = sig
 
   val is_zero : poly -> bool
 
-  val is_const : poly -> bool
+  val is_const : poly -> coef option
 
   val compare : poly -> poly -> int
 
@@ -218,7 +218,7 @@ module Ideal (C : Sigs.Coefficient) = struct
     let min_basis = filter [] monic_grobner in
     if List.length min_basis = 0 then 
       Bot
-    else if List.exists (fun (p, _) -> is_const p) min_basis then
+    else if List.exists (fun (p, _) -> match is_const p with | Some _ -> true | None -> false) min_basis then
       Top
     else
       I min_basis
@@ -254,9 +254,11 @@ module Ideal (C : Sigs.Coefficient) = struct
         else (
           let sp = s_poly ord fi fj in
           let (_, (_, s)) = division ord g sp in
-          if is_zero (fst s) then aux rest g
-          else if is_const (fst s) then {basis=Top; ord}
-          else 
+          match is_const (fst s) with
+          | Some c ->
+            if Mon.cmp c (Mon.from_string_c "0") = 0 then aux rest g
+            else {basis = Top; ord}
+          | None ->
             aux (worklist @ (List.mapi (fun i _ -> (i, t+1)) g)) (g @ [s])
         )
     in
@@ -324,7 +326,7 @@ module Ideal (C : Sigs.Coefficient) = struct
     let normal = List.filter (not % is_zero) eqs in
     if List.length normal = 0 || List.for_all is_zero normal then 
       {basis = Bot; ord}
-    else if List.exists is_const normal then 
+    else if List.exists (fun p -> match is_const p with | Some _ -> true | None -> false) normal then 
       {basis = Top; ord}
     else 
       improved_buchberger ord normal
@@ -416,7 +418,7 @@ module Ideal (C : Sigs.Coefficient) = struct
     let ord = make_grevlex_from_list deg_map orig_vord_bk1 orig_vord_bk2 in
     if List.length normal = 0 || List.for_all is_zero normal then 
       {basis = Bot; ord}
-    else if List.exists is_const normal then 
+    else if List.exists (fun p -> match is_const p with | Some _ -> true | None -> false) normal then 
       {basis = Top; ord}
     else 
       let fpolys = List.map (convert_to_faugere (vord_bk1 @ vord_bk2)) subps in
@@ -439,7 +441,7 @@ module Ideal (C : Sigs.Coefficient) = struct
       in
       let normal_gb = List.filter (fun p -> not (is_zero p)) gb in
       if List.length normal_gb = 0 || List.for_all is_zero normal_gb then {basis = Bot; ord}
-      else if List.exists is_const normal_gb then {basis = Top; ord}
+      else if List.exists (fun p -> match is_const p with | Some _ -> true | None -> false) normal_gb then {basis = Top; ord}
       else
         let sorted_gb = List.map (fun p -> make_sorted_poly ord (poly_sub p)) normal_gb in
         {basis = I sorted_gb; ord}
@@ -573,11 +575,11 @@ module Cone(C : Sigs.Coefficient) = struct
   (*type cone = int * I.ideal * poly list list*)
 
   let is_const_not_neg p = 
-    if I.is_const p then
-      let c = fst (List.hd (BatList.of_enum (I.get_mons p))) in
+    match I.is_const p with
+    | Some c ->
       if I.Mon.cmp c (I.Mon.from_string_c "0") >= 0 then Some c
       else None
-    else None
+    | None -> None
 
   (*let saturate_prod l depth = 
     let rec aux1 l1 d =
@@ -700,8 +702,9 @@ module Cone(C : Sigs.Coefficient) = struct
       let eq_just = {orig = p; mults} in
       Some (eq_just, PosComb ([], coe))
     | None ->
-      if I.is_const p_ired then None
-      else
+      match I.is_const p_ired with
+      | Some _ -> None
+      | None ->
         let eq_just = {orig = p; mults} in
         let dim_map, p_dim, p_ineq = polys_to_dim ~ord:None p_ired c.ineqs in
         let ids = BatISet.elements (BatIMap.domain p_ineq) in
@@ -834,8 +837,9 @@ module Cone(C : Sigs.Coefficient) = struct
     Format.pp_close_box f ()
 
   let reduce_ineq ord p ineqs = 
-    if is_const p then [], p
-    else 
+    match is_const p with
+    | Some _ -> [], p
+    | None ->
       let ids = BatISet.elements (BatIMap.domain ineqs) in
       if List.length ids = 0 then [], p
       else 

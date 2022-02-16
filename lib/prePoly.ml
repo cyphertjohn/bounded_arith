@@ -325,10 +325,17 @@ module MakeP (M : sig
       BatEnum.for_all M.is_one (get_mons p)
 
   let is_const (p : poly) = 
-    if BatHashtbl.length p = 0 then true
+    if BatHashtbl.length p = 0 then Some (M.from_string_c "0")
     else
       let mons = get_mons p in
-      BatEnum.for_all M.is_const mons
+      let folder const (c, mon) = 
+        if M.is_const (c, mon) then 
+          match const with
+          | None -> None
+          | Some c2 -> Some (M.addc c c2)
+        else None
+      in
+      BatEnum.fold folder (Some (M.from_string_c "0")) mons
 
   let add_mon (p : poly) ((c1, m) : M.mon)  =
     BatHashtbl.modify_def (M.from_string_c "0") m (fun c2 -> M.addc c1 c2) p;

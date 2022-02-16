@@ -257,18 +257,18 @@ let update_map ideal term_map t_p eqs ineqs =
     match term with
     | Floo p -> 
       let p_red = I.reduce p ideal in
-      if P.is_const p_red then
-        let const = fst (List.hd (BatList.of_enum (P.get_mons p_red))) in
+      (match P.is_const p_red with
+      | Some const ->
         (acc_map, (v, P.from_const (Sigs.Q.floor const)) :: const_sub)
-      else
-        S.add v (Floo p_red) acc_map, const_sub
+      | None -> 
+        S.add v (Floo p_red) acc_map, const_sub)
     | Recip p ->
       let p_red = I.reduce p ideal in
-      if P.is_const p_red then
-        let const = fst (List.hd (BatList.of_enum (P.get_mons p_red))) in
+      (match P.is_const p_red with
+      | Some const ->
         (acc_map, (v, P.from_const (Sigs.Q.divc (Sigs.Q.from_string_c "1") const)) :: const_sub)
-      else
-        S.add v (Recip p_red) acc_map, const_sub
+      | None ->
+        S.add v (Recip p_red) acc_map, const_sub)
   in
   let reduced_map, const_subs = S.fold reduce term_map (S.empty, []) in
   let sub_consts term = 
@@ -373,19 +373,21 @@ let rewrite ?sat:(sat=3) ?fgb:(fgb=true) (eqs : Expr.qexpr list) (ineqs : Expr.q
     new_map, new_t, new_ideal, new_ineqs
   in
   let rec loop old_map t_map tp old_ideal ideal inequalities =
-    if P.is_const tp then 
+    match P.is_const tp with
+    | Some _ ->
       let unpure_t, _ = unpurify [tp] t_map in
       List.hd unpure_t
-    else if equal_t_map old_map t_map && I.equal old_ideal ideal then 
-      let (inequ, impls) = inst_floor_recip t_map in
-      let cone = C.make_cone_i ~sat:sat ~ineqs:(inequalities @ inequ) ~impls:impls ideal in
-      Log.log ~level:`debug C.ppc (Some cone);
-      let red_tp = C.reduce tp cone in
-      let unpure_t, _ = unpurify [red_tp] t_map in
-      List.hd (unpure_t)
-    else
-      let (new_map, new_t, new_ideal, new_ineqs) = iteration t_map tp ideal inequalities in
-      loop t_map new_map new_t ideal new_ideal new_ineqs
+    | None ->
+      if equal_t_map old_map t_map && I.equal old_ideal ideal then 
+        let (inequ, impls) = inst_floor_recip t_map in
+        let cone = C.make_cone_i ~sat:sat ~ineqs:(inequalities @ inequ) ~impls:impls ideal in
+        Log.log ~level:`debug C.ppc (Some cone);
+        let red_tp = C.reduce tp cone in
+        let unpure_t, _ = unpurify [red_tp] t_map in
+        List.hd (unpure_t)
+      else
+        let (new_map, new_t, new_ideal, new_ineqs) = iteration t_map tp ideal inequalities in
+        loop t_map new_map new_t ideal new_ideal new_ineqs
   in
   Log.log_line_s ~level:`trace "Initial ideal";
   let ideal = calc_ideal term_map (BatEnum.concat (BatEnum.map P.get_vars (BatList.enum (t_p::eqs @ ineqs)))) eqs in
