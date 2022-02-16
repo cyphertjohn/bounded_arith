@@ -9,6 +9,7 @@ bug-reports: "github.com/cyphertjohn/bounded_arith"
 depends: [
   "dune" {>= "2.8"}
   "zarith" {build}
+  "z3" {build}
   "menhir" {build}
   "batteries" {build}
   "ctypes" {build}

@@ -656,8 +656,6 @@ module Cone(C : Sigs.Coefficient) = struct
 
   module DimMap = BatIMap
 
-  module S = BatMap.Make(struct type t = Lp.Poly.t let compare = Lp.Poly.compare end)
-
   let polys_to_dim ?ord:(ord = None) p polys = 
     let mon_map = MonMap.create (10 * (BatISet.cardinal (BatIMap.domain polys))) in
     let add_mons _ (poly, _) = 
@@ -707,43 +705,55 @@ module Cone(C : Sigs.Coefficient) = struct
         let eq_just = {orig = p; mults} in
         let dim_map, p_dim, p_ineq = polys_to_dim ~ord:None p_ired c.ineqs in
         let ids = BatISet.elements (BatIMap.domain p_ineq) in
-        let lambdas = Array.to_list (Lp.Poly.range ~lb:0. ~start:0 (List.length ids) "lambda") in
+        let z3ctx = Z3.mk_context [] in
+        let solver = Z3.Solver.mk_simple_solver z3ctx in
+        let lambdas = List.map (fun id -> (Z3.Arithmetic.Real.mk_const_s z3ctx ("lambda" ^ (string_of_int id)))) ids in
+        Z3.Solver.add solver (List.map (fun lambda -> Z3.Arithmetic.mk_ge z3ctx lambda (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0)) lambdas);
         let ineq_dim_lambda = List.combine lambdas ids in
-        let generate_cnstrs dim m (cnsts, r_var) = 
+        let generate_cnstrs dim m r_var = 
           let generate_lhs_sum sum (lambda, ineq_id) = 
             try 
               let dim_c = DimMap.find dim (BatIMap.find ineq_id p_ineq) in
-              Lp.Poly.(++) sum (Lp.Poly.expand (Lp.Poly.c (Mon.to_float dim_c)) lambda)
+              Z3.Arithmetic.mk_add z3ctx [sum; Z3.Arithmetic.mk_mul z3ctx [(Z3.Arithmetic.Real.mk_numeral_s z3ctx (Mon.to_string_c dim_c)); lambda]] 
             with Not_found -> sum
             in
-          let sum = List.fold_left generate_lhs_sum (Lp.Poly.zero) ineq_dim_lambda in
+          let sum = List.fold_left generate_lhs_sum (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0) ineq_dim_lambda in
           let p_coef = 
-            try Lp.Poly.c (Mon.to_float (DimMap.find dim p_dim))
-            with Not_found -> Lp.Poly.zero
+            try Z3.Arithmetic.Real.mk_numeral_s z3ctx (Mon.to_string_c (DimMap.find dim p_dim))
+            with Not_found -> Z3.Arithmetic.Real.mk_numeral_i z3ctx 0
           in
           if I.Mon.is_const (I.Mon.from_string_c "0", m) then
-            let r = Lp.Poly.var ~lb:0. "r" in
-            let new_cnst = Lp.Cnstr.eq (Lp.Poly.(++) sum r) p_coef in
-            new_cnst :: cnsts, Some r
+            let r = Z3.Arithmetic.Real.mk_const_s z3ctx "r" in
+            Z3.Solver.add solver [Z3.Arithmetic.mk_ge z3ctx r (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0)]; (* r >= 0*)
+            Z3.Solver.add solver [Z3.Boolean.mk_eq z3ctx p_coef (Z3.Arithmetic.mk_add z3ctx [sum; r])];   (* p_coef = sum (lambda_i q_i) + r*)
+            Some r
           else
-            let new_cnst = Lp.Cnstr.eq sum p_coef in
-            new_cnst :: cnsts, r_var
+            (Z3.Solver.add solver [Z3.Boolean.mk_eq z3ctx p_coef sum]; (* p_coef = sum (lambda_i q_i)*)
+            r_var)
         in
-      let cnstrs, r_opt = DimMap.fold generate_cnstrs dim_map ([], None) in
+      let r_opt = DimMap.fold generate_cnstrs dim_map None in
       let r = match r_opt with | Some v -> v | None -> failwith "no constant constraint was created" in
-      let prob = Lp.Problem.make (Lp.Objective.minimize Lp.Poly.zero) cnstrs in
-      match Lp_glpk.solve ~term_output:false prob with
-      | Ok (_, m) -> 
-        let collect_lambdas pos_comb (lambda, ineq_id) = 
-          let lambdac = Mon.of_float (Lp.PMap.find lambda m) in
-          if Mon.cmp lambdac (Mon.from_string_c "0") = 0 then pos_comb
-          else
-            (ineq_id, lambdac) :: pos_comb
-        in
-        let pos_comb = List.fold_left collect_lambdas [] ineq_dim_lambda in
-        let witness = Mon.of_float (Lp.PMap.find r m) in
-        Some (eq_just, PosComb (pos_comb, witness))
-      | Error _ -> None
+      match Z3.Solver.check solver [] with
+      | Z3.Solver.UNKNOWN | Z3.Solver.UNSATISFIABLE -> None
+      | Z3.Solver.SATISFIABLE ->
+        match Z3.Solver.get_model solver with
+        | None -> failwith "check is sat but no model?"
+        | Some model ->
+          let collect_lambdas pos_comb (lambda, ineq_id) = 
+            match Z3.Model.get_const_interp_e model lambda with
+            | None -> failwith "model doesn't have interpretation for a lambda"
+            | Some v ->
+              let lambdac = Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio v) in
+              if Mon.cmp lambdac (Mon.from_string_c "0") = 0 then pos_comb
+              else
+                (ineq_id, lambdac) :: pos_comb
+          in
+          let pos_comb = List.fold_left collect_lambdas [] ineq_dim_lambda in
+          match Z3.Model.get_const_interp_e model r with
+          | None -> failwith "model doesn't have interpretation for r"
+          | Some rv ->
+            let witness = Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio rv) in
+            Some (eq_just, PosComb (pos_comb, witness))
 
 
   let pp_used_th c fo id = 
@@ -829,55 +839,65 @@ module Cone(C : Sigs.Coefficient) = struct
       let ids = BatISet.elements (BatIMap.domain ineqs) in
       if List.length ids = 0 then [], p
       else 
+        let z3ctx = Z3.mk_context [] in
+        let solver = Z3.Optimize.mk_opt z3ctx in
         let dim_map, p_dim, p_ineq = polys_to_dim ~ord:(Some ord) p ineqs in
-        let lambdas = Array.to_list (Lp.Poly.range ~lb:Float.neg_infinity ~ub:0. ~start:0 (List.length ids) "lambda") in
+        let lambdas = List.map (fun id -> (Z3.Arithmetic.Real.mk_const_s z3ctx ("lambda" ^ (string_of_int id)))) ids in
+        Z3.Optimize.add solver (List.map (fun lambda -> Z3.Arithmetic.mk_le z3ctx lambda (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0)) lambdas);
         let ineq_dim_lambda = List.combine lambdas ids in
       (*let add_pos_mult i ineq = 
         Lp.Poly.of_var (Lp.Var.make ~ub:0. ("lambda" ^ (string_of_int i))), ineq
       in
       let ineq_dim_lambda = List.mapi add_pos_mult ineq_dim in*)
-        let generate_cnstrs dim _ (hard_cnsts, r_cnsts, r_map) = 
+        let generate_cnstrs dim _ (hard_cnsts, r_cnsts) = 
           let generate_lhs_sum sum (lambda, ineq_id) = 
             try 
               let dim_c = DimMap.find dim (BatIMap.find ineq_id p_ineq) in
-              Lp.Poly.(++) sum (Lp.Poly.expand (Lp.Poly.c (Mon.to_float dim_c)) lambda)
+              Z3.Arithmetic.mk_add z3ctx [sum; Z3.Arithmetic.mk_mul z3ctx [(Z3.Arithmetic.Real.mk_numeral_s z3ctx (Mon.to_string_c dim_c)); lambda]] 
             with Not_found -> sum
             in
-          let sum = List.fold_left generate_lhs_sum (Lp.Poly.zero) ineq_dim_lambda in
-          let r = Lp.Poly.var ~lb:Float.neg_infinity ("r" ^ (string_of_int dim)) in
+          let sum = List.fold_left generate_lhs_sum (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0) ineq_dim_lambda in
+          let r = Z3.Arithmetic.Real.mk_const_s z3ctx ("r" ^ (string_of_int dim)) in
           let p_coef = 
-            try Lp.Poly.c (Mon.to_float (DimMap.find dim p_dim))
-            with Not_found -> Lp.Poly.zero
+            try Z3.Arithmetic.Real.mk_numeral_s z3ctx (Mon.to_string_c (DimMap.find dim p_dim))
+            with Not_found -> Z3.Arithmetic.Real.mk_numeral_i z3ctx 0
           in
-          let new_cnst = Lp.Cnstr.eq (Lp.Poly.(++) sum r) p_coef in
-          let r_zero = Lp.Cnstr.eq r Lp.Poly.zero in
-          new_cnst :: hard_cnsts, r_zero :: r_cnsts, S.add r dim r_map
+          let new_cnst = Z3.Boolean.mk_eq z3ctx (Z3.Arithmetic.mk_add z3ctx [sum; r]) p_coef in
+          new_cnst :: hard_cnsts, r :: r_cnsts
         in
-        let hard_cnsts, r_cnsts, r_to_dim = DimMap.fold generate_cnstrs dim_map ([], [], S.empty) in
-        let rec find_optimal_sol rs = 
-          (*let prob = Lp.Problem.make (Lp.Objective.minimize (BatEnum.fold Lp.Poly.(++) (Lp.Poly.zero) (S.keys r_to_dim))) (hard_cnsts @ rs) in*)
-          let prob = Lp.Problem.make (Lp.Objective.minimize (Lp.Poly.zero)) (hard_cnsts @ rs) in
-          (*Log.log ~level:`trace pp_prob prob;*)
-          match Lp_glpk.solve ~term_output:false prob with
-          | Ok (_, s) ->
+        let hard_cnsts, r_cnsts = DimMap.fold generate_cnstrs dim_map ([], []) in
+        Z3.Optimize.add solver hard_cnsts;
+        List.iteri (fun i r -> let _ = Z3.Optimize.add_soft solver (Z3.Boolean.mk_eq z3ctx r (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0)) "1" (Z3.Symbol.mk_int z3ctx i) in ()) (List.rev r_cnsts);
+        let _ = Z3.Optimize.maximize solver (Z3.Arithmetic.mk_add z3ctx lambdas) in
+        match Z3.Optimize.check solver with
+        | Z3.Solver.UNKNOWN | Z3.Solver.UNSATISFIABLE -> failwith "unable to solve linear program"
+        | Z3.Solver.SATISFIABLE ->
+          match Z3.Optimize.get_model solver with
+          | None -> failwith "Z3 has no model"
+          | Some model ->
             let collect_lambdas neg_comb (lambda, ineq_id) = 
-              let lambdac = Mon.of_float (Lp.PMap.find lambda s) in
-              if Mon.cmp lambdac (Mon.from_string_c "0") = 0 then neg_comb
-              else
-                (lambdac, ineq_id) :: neg_comb
+              match (Z3.Model.get_const_interp_e model lambda) with
+              | None -> failwith "Z3 model doesn't have a lambda"
+              | Some lc ->
+                let lambdac = Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio lc) in
+                if Mon.cmp lambdac (Mon.from_string_c "0") = 0 then neg_comb
+                else
+                  (lambdac, ineq_id) :: neg_comb
             in
             let neg_comb = List.fold_left collect_lambdas [] ineq_dim_lambda in
-            let collect_remainder r_s r_dim rem = 
-              let rc = Mon.of_float (Lp.PMap.find r_s s) in
-              if Mon.cmp rc (Mon.from_string_c "0") = 0 then rem
-              else
-                (rc, DimMap.find r_dim dim_map) :: rem
+            let collect_remainder rem r_s = 
+              match (Z3.Model.get_const_interp_e model r_s) with
+              | None -> failwith "Z3 model doesn't have an r"
+              | Some rv ->
+                let rc = Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio rv) in
+                if Mon.cmp rc (Mon.from_string_c "0") = 0 then rem
+                else
+                  let r_string = Z3.Expr.to_string r_s in
+                  let r_dim = int_of_string (String.sub r_string 1 ((String.length r_string) - 1)) in
+                  (rc, DimMap.find r_dim dim_map) :: rem
             in
-            let rem = from_mon_list (S.fold collect_remainder r_to_dim []) in
+            let rem = from_mon_list (List.fold_left collect_remainder [] r_cnsts) in
             neg_comb, rem
-          | Error _ -> find_optimal_sol (List.tl rs)
-        in
-        find_optimal_sol r_cnsts
         
   let reduce_eq p c = I.reduce p c.ideal
 
