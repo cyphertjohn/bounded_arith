@@ -15,6 +15,7 @@
  (synopsis "A library for generating symbolic bounds")
  (depends
    (zarith :build)
+   (z3 :build)
    (menhir :build)
    (batteries :build)
    (ctypes :build)
