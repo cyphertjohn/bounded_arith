@@ -1,11 +1,11 @@
 # Term Rewriter
 
 ## Dependencies
-This code requires an ocaml interface to the GNU MultiPrecision library (gmp) as well as GNU Linear Programming library (glpk).
+This code requires an ocaml interface to the GNU MultiPrecision library (gmp).
 
 For ocaml opam is also helpful. To install these dependencies on Ubuntu run:
 
-`sudo apt-get install opam libgmp-dev libmpfr-dev libglpk-dev`
+`sudo apt-get install opam libgmp-dev libmpfr-dev`
 
 To initialize opam run:
 
