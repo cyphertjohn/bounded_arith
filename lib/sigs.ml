@@ -2,7 +2,8 @@ module type Coefficient = sig
     type coef 
     val addc : coef -> coef -> coef 
     val mulc : coef -> coef -> coef
-    val divc : coef -> coef -> coef 
+    val divc : coef -> coef -> coef
+    val exp : coef -> int -> coef
     val is_zero : coef -> bool
     val is_one : coef -> bool
     val sgn : coef -> int
@@ -35,6 +36,14 @@ module Q : Coefficient = struct
     let to_zarith (x : coef) : Q.t = x
     let of_zarith (x : Z.t) : coef = Q.make x Z.one
     let of_zarith_q (x : Q.t) : coef = x
+    let exp c n = 
+      let rec aux acc x e = 
+        if e < 0 then aux acc (Q.inv x) (-e)
+        else if e = 0 then acc
+        else if e mod 2 = 0 then aux acc (Q.mul x x) (e/2)
+        else aux (Q.mul acc x) (Q.mul x x) ((e-1)/2)
+      in
+      aux (Q.one) c n
 end
 
 module Expr = struct

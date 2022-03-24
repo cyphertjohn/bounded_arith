@@ -160,6 +160,22 @@ module MakeMon (C : Sigs.Coefficient) = struct
   let mon_ord (c1, m1) (c2, m2) = 
     let order = !ord m1 m2 in
     if order = 0 then C.cmp c1 c2 else order
+
+  let eval_monic eval_list (mon : monic_mon) = 
+    if mon = [] then from_string_c "0"
+    else
+      let eval_list_s = List.sort (fun (av, _) (bv, _) -> compare av bv) eval_list in
+      let rec aux res elist monlist = 
+        match elist, monlist with
+        | [], [] -> res
+        | _, [] -> res
+        | [], (v, _) :: _ -> failwith ("No evaluation for " ^ v)
+        | (evar, eval) :: erest, (mv, me) :: mrest ->
+          if compare evar mv < 0 then aux res erest monlist
+          else if compare evar mv > 0 then failwith ("No evaluation for " ^ mv)
+          else aux (mulc res (C.exp eval me)) erest mrest
+      in
+      aux (from_string_c "1") eval_list_s mon
   
 end
 module MakeP (M : sig
@@ -185,6 +201,7 @@ module MakeP (M : sig
               val is_const : mon -> bool
               val lex_ord : monic_mon -> monic_mon -> int
               val grlex_ord : monic_mon -> monic_mon -> int
+              val eval_monic : (string * coef) list -> monic_mon -> coef
             end ) = struct
 
   let set_ord order = M.ord := order

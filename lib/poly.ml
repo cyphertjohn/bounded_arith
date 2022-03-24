@@ -288,7 +288,7 @@ module Ideal (C : Sigs.Coefficient) = struct
     Format.pp_close_box f ()
 
 
-  let pp_red ord f (p, basis, mults, rem) = 
+  (*let pp_red ord f (p, basis, mults, rem) = 
     let filtered_list = List.filter_map (fun (m, b) -> if is_zero m then None else Some (m, b)) (List.combine mults basis) in
     let filtered_list = if List.length filtered_list = 0 then [from_const_s "0", from_const_s "0"] else filtered_list in
     (Format.pp_open_box f 0; (pp ~ord:ord) f p; 
@@ -304,7 +304,7 @@ module Ideal (C : Sigs.Coefficient) = struct
       Format.pp_close_box fo ()
     in
     Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_mb f filtered_list;
-    Format.pp_close_box f (); Format.pp_close_box f ())
+    Format.pp_close_box f (); Format.pp_close_box f ())*)
 
   let reduce p (i : ideal) : poly = 
     match i.basis with
@@ -570,22 +570,87 @@ module Cone(C : Sigs.Coefficient) = struct
       mults : poly list
     }
   
-  type posCom = PosComb of ((int * coef) list * I.coef)
+  (*type posCom = PosComb of ((int * coef) list * I.coef)
 
-  type derJust = eqJust * posCom
+  type derJust = eqJust * posCom*)
 
   type justification = 
    | Product of eqJust * (int list)
-   | Given of eqJust * derJust option
+   | Given of eqJust (* * derJust option*)
 
   type cone = 
     {
+      z3ctx : Z3.context;
       depth : int;
       ideal : I.ideal;
       curr_num : int;
-      ineqs : (poly * justification) BatIMap.t;
+      mutable curr_mon : int;
+      mon_to_dim : (monic_mon, int) BatHashtbl.t;
+      mutable dim_to_mon : (monic_mon BatIMap.t);
+      ineqs : ((Mon.coef BatIMap.t) * justification) BatIMap.t;
       ineqs_prod : int list list list
     }
+
+  let make_empty_cone depth ideal = 
+    {z3ctx = Z3.mk_context []; depth; ideal; curr_num = 0; curr_mon = 0; mon_to_dim = BatHashtbl.create 50; dim_to_mon = BatIMap.empty ~eq:(fun a b -> Mon.lex_ord a b =0); ineqs = BatIMap.empty ~eq:(fun _ _ -> false); ineqs_prod = []}
+
+
+  let get_dim c m = 
+    try BatHashtbl.find c.mon_to_dim m
+    with Not_found ->
+      BatHashtbl.add c.mon_to_dim m c.curr_mon;
+      c.dim_to_mon <- BatIMap.add c.curr_mon m c.dim_to_mon;
+      c.curr_mon <- c.curr_mon + 1;
+      c.curr_mon - 1
+
+  let get_mon c dim = 
+    try BatIMap.find dim c.dim_to_mon
+    with Not_found -> failwith "Dim with no corresponding mon"
+
+  let poly_to_dim c p =
+    let mons = get_mons p in
+    if BatEnum.is_empty mons then
+      let (zero, zero_monic) = Mon.zero in
+      BatIMap.singleton ~eq:(fun a b -> Mon.cmp a b = 0) (get_dim c zero_monic) zero
+    else
+      BatEnum.fold (fun map (coe, monic) -> BatIMap.add (get_dim c monic) coe map) (BatIMap.empty ~eq:(fun a b -> Mon.cmp a b = 0)) mons
+
+  let dim_to_poly c dim_map = 
+    from_mon_list (BatIMap.fold (fun dim coe l -> (coe, get_mon c dim) :: l) dim_map [])
+
+  let get_eq_basis c = I.get_generators c.ideal
+
+  let get_ineq_basis c = 
+    if List.length c.ineqs_prod = 0 then [I.from_const_s "0"]
+    else
+      let first_level = List.map List.hd (List.hd c.ineqs_prod) in
+      List.map (fun i -> (dim_to_poly c (fst (BatIMap.find i c.ineqs)))) first_level
+
+
+  let ppc f c = 
+      Format.pp_print_string f "Cone:"; Format.pp_print_space f ();
+      ppi f c.ideal;
+      Format.pp_force_newline f ();
+      if BatIMap.is_empty c.ineqs then Format.pp_print_string f "Ineqs: [0]"
+      else
+        Format.pp_open_hbox f ();
+        Format.pp_print_string f "Basis Ineqs:";
+        Format.print_space ();
+        Format.pp_print_string f "["; 
+        Format.pp_open_box f 0;
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (get_ineq_basis c);
+        Format.pp_print_string f "]";
+        Format.pp_close_box f (); Format.pp_close_box f ()(*
+        Format.pp_force_newline f ();
+        Format.pp_open_hbox f ();
+        Format.pp_print_string f "Derived Ineqs:";
+        Format.print_space ();
+        Format.pp_print_string f "["; 
+        Format.pp_open_box f 0;
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (BatList.of_enum (BatEnum.map (fun (_, _, (i, _)) -> dim_to_poly c i) (BatIMap.enum c.ineqs)));
+        Format.pp_print_string f "]";
+        Format.pp_close_box f (); Format.pp_close_box f ()*)
+
 
   (*type cone = int * I.ideal * poly list list*)
 
@@ -626,22 +691,76 @@ module Cone(C : Sigs.Coefficient) = struct
         in
       List.rev (aux1 l depth)*)
 
+  let upgrade_ineqs c ineqs_to_upgrade = 
+    let is_factor a b = 
+      let rec aux xl yl = 
+        match xl, yl with
+        | [], [] -> true
+        | _, [] -> false
+        | [], _ -> true
+        | x :: xs, y :: ys ->
+          if x = y then aux xs ys
+          else if y < x then false
+          else aux xl ys
+      in
+      aux a b
+    in
+    let ineqs_to_prods lis = List.map (fun id -> 
+      match BatIMap.find id c.ineqs with
+      | (_, (Given _)) -> [id]
+      | (_, (Product (_, l))) -> l
+    ) lis in
+    let ineqs_to_upgrade_prods = ineqs_to_prods ineqs_to_upgrade in
+    let collect_ineqs_to_remove id (_, just) to_remove = 
+      match just with
+      | Product (_, prods) ->
+        if List.exists (fun remove_pset -> is_factor remove_pset prods) ineqs_to_upgrade_prods then id :: to_remove
+        else to_remove
+      | _ -> to_remove
+    in
+    let ineqs_to_remove = BatIMap.fold collect_ineqs_to_remove c.ineqs ineqs_to_upgrade in
+    let new_ineqs = List.fold_left (fun m i -> BatIMap.remove i m) c.ineqs ineqs_to_remove in
+    let new_eqs = List.map (fun id -> dim_to_poly c (fst (BatIMap.find id c.ineqs))) ineqs_to_upgrade in
+    let new_ideal = I.add_eqs c.ideal new_eqs in
+    let folder id (_, just) (map, remove) = 
+      let new_red, new_just = 
+        match just with
+        | Product (eq_just, prod_list) -> 
+          let p_red, mults = I.reduce_just (eq_just.orig) new_ideal in
+          p_red, Product({orig = eq_just.orig; mults}, prod_list)
+        | Given (eq_just) -> 
+          let p_red, mults = I.reduce_just (eq_just.orig) new_ideal in
+          p_red, Given ({orig = eq_just.orig; mults})
+      in
+      match I.is_const new_red with
+      | None -> BatIMap.add id (poly_to_dim c new_red, new_just) map, remove
+      | Some c ->
+        if Mon.cmp c (Mon.from_string_c "0") >= 0 then (map, id :: remove)
+        else failwith "Created a contradiction"
+    in
+    let red_ineqs, is_to_remove = BatIMap.fold folder new_ineqs (BatIMap.empty ~eq:(fun _ _ -> false), ineqs_to_remove) in
+    let is_to_remove_prod = ineqs_to_prods is_to_remove in
+    let new_ineq_prod = List.map (fun pll -> List.filter (fun pl -> not (List.exists (fun r -> is_factor r pl) is_to_remove_prod)) pll) c.ineqs_prod in
+    {c with ideal = new_ideal; ineqs = red_ineqs; ineqs_prod = new_ineq_prod}
+
+
+
   (* This function doesn't check whether incoming ine is already a member of the linear cone. Could consider an alternative*)
-  let add_ineq c ine just : cone = 
+  let add_ineq c ine just : (cone * int list) = 
     let mult_and_minimize_ineqs (ineqs, curr_id) ins_to_add = 
       let reduce_and_just (inequs, id) prod = 
-        let p = List.fold_left (fun acc ind -> I.mul acc (fst (BatIMap.find ind inequs))) (I.from_const_s "1") prod in
+        let p = List.fold_left (fun acc ind -> I.mul acc (dim_to_poly c (fst (BatIMap.find ind inequs)))) (I.from_const_s "1") prod in
         let p_red, mults = I.reduce_just p c.ideal in
         match is_const_not_neg p_red with
         | Some _ -> inequs, id
         | None ->
           let eq_just = {orig = p; mults} in
-          let new_ineqs = BatIMap.add id (p_red, Product (eq_just, prod)) inequs in
+          let new_ineqs = BatIMap.add id (poly_to_dim c p_red, Product (eq_just, prod)) inequs in
           new_ineqs, (id + 1)
       in
       List.fold_left reduce_and_just (ineqs, curr_id) ins_to_add
     in
-    if not (is_const_not_neg ine = None) then c
+    if not (is_const_not_neg ine = None) then c, []
     else if BatIMap.is_empty c.ineqs then 
       let poly_id = c.curr_num in
       let rec dup v t = if t <=0 then [] else v :: (dup v (t-1)) in
@@ -652,8 +771,9 @@ module Cone(C : Sigs.Coefficient) = struct
       in
       let ineq_ladder = aux [] c.depth in
       let prod_to_comput = List.concat (List.tl ineq_ladder) in
-      let ineqs, next_id = mult_and_minimize_ineqs ((BatIMap.add poly_id (ine, just) (BatIMap.empty ~eq:(fun _ _ -> false))), poly_id + 1) prod_to_comput in
-      {depth = c.depth; ideal = c.ideal; curr_num = next_id; ineqs; ineqs_prod = ineq_ladder}
+      let ine_map = poly_to_dim c ine in
+      let ineqs, next_id = mult_and_minimize_ineqs ((BatIMap.add poly_id (ine_map, just) (BatIMap.empty ~eq:(fun _ _ -> false))), poly_id + 1) prod_to_comput in
+      {c with curr_num = next_id; ineqs; ineqs_prod = ineq_ladder}, List.init (next_id - poly_id) (fun i -> poly_id + i)
     else 
       let poly_id = c.curr_num in
       let folder (all_ineq, new_ineqs) curr_level = 
@@ -663,123 +783,172 @@ module Cone(C : Sigs.Coefficient) = struct
           let new_ineq = List.map (fun p -> poly_id :: p) prev_level in
           (new_ineq @ curr_level) :: all_ineq, new_ineq @ new_ineqs
       in
-      let ineqs_with_ine = BatIMap.add poly_id (ine, just) c.ineqs in
+      let ineqs_with_ine = BatIMap.add poly_id (poly_to_dim c ine, just) c.ineqs in
       let ineqs_ladder, ineqs_to_add = List.fold_left folder ([], []) c.ineqs_prod in
       let ineqs, next_id = mult_and_minimize_ineqs (ineqs_with_ine, poly_id + 1) ineqs_to_add in
-      {depth = c.depth; ideal = c.ideal; curr_num = next_id; ineqs; ineqs_prod = List.rev ineqs_ladder}
+      {c with curr_num = next_id; ineqs; ineqs_prod = List.rev ineqs_ladder}, List.init (next_id - poly_id) (fun i -> poly_id + i)
 
 
-  module MonMap = BatHashtbl
-
-  module DimMap = BatIMap
-
-  let polys_to_dim ?ord:(ord = None) p polys = 
-    let mon_map = MonMap.create (10 * (BatISet.cardinal (BatIMap.domain polys))) in
-    let add_mons _ (poly, _) = 
-      BatEnum.iter (fun (_, m) -> MonMap.modify_def 0 m (fun _ -> 0) mon_map) (get_mons poly)
-    in
-    BatIMap.iter add_mons polys;
-    BatEnum.iter (fun (_, m) -> MonMap.modify_def 0 m (fun _ -> 0) mon_map) (get_mons p);
-    let mon_list = 
-      match ord with
-      | None -> BatList.of_enum (BatEnum.map fst (MonMap.enum mon_map))
-      | Some o -> List.sort (fun a b ->(-1) * ( o a b)) (BatList.of_enum (BatEnum.map fst (MonMap.enum mon_map)))
-    in
-    let curr_dim = ref 0 in
-    let rec generate_dims mons curr_dim_map = 
-      match mons with
-      | [] -> curr_dim_map
-      | m :: ms ->
-        let new_dim_map = DimMap.add !curr_dim m curr_dim_map in
-        MonMap.modify m (fun _ -> !curr_dim) mon_map;
-        curr_dim := !curr_dim + 1;
-        generate_dims ms new_dim_map
-    in
-    let dim_map = generate_dims mon_list (DimMap.empty ~eq:(=)) in
-    let poly_to_coef_map (poly, _) = 
-      BatEnum.fold (fun acc (c, mon) -> 
-        let dim = MonMap.find mon_map mon in
-        DimMap.add dim c acc) (DimMap.empty ~eq:(fun x y -> Mon.cmp x y = 0)) (get_mons poly)
-    in
-    dim_map, poly_to_coef_map (p, ()), BatIMap.map poly_to_coef_map polys
-    
-  (*let pp_prob f prob = 
-    let prob_str = Lp.Problem.to_string ~short:true prob in
-    Format.pp_print_string f prob_str;
-    Format.force_newline ()*)
-
-
-  let is_non_neg p c : derJust option = 
-    let id = c.ideal in
-    let p_ired, mults = I.reduce_just p id in
-    match is_const_not_neg p_ired with
-    | Some coe ->
-      let eq_just = {orig = p; mults} in
-      Some (eq_just, PosComb ([], coe))
-    | None ->
-      match I.is_const p_ired with
-      | Some _ -> None
-      | None ->
-        let eq_just = {orig = p; mults} in
-        let dim_map, p_dim, p_ineq = polys_to_dim ~ord:None p_ired c.ineqs in
-        let ids = BatISet.elements (BatIMap.domain p_ineq) in
-        let z3ctx = Z3.mk_context [] in
-        let solver = Z3.Solver.mk_simple_solver z3ctx in
-        let lambdas = List.map (fun id -> (Z3.Arithmetic.Real.mk_const_s z3ctx ("lambda" ^ (string_of_int id)))) ids in
-        Z3.Solver.add solver (List.map (fun lambda -> Z3.Arithmetic.mk_ge z3ctx lambda (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0)) lambdas);
-        let ineq_dim_lambda = List.combine lambdas ids in
-        let generate_cnstrs dim m r_var = 
-          let generate_lhs_sum sum (lambda, ineq_id) = 
-            try 
-              let dim_c = DimMap.find dim (BatIMap.find ineq_id p_ineq) in
-              Z3.Arithmetic.mk_add z3ctx [sum; Z3.Arithmetic.mk_mul z3ctx [(Z3.Arithmetic.Real.mk_numeral_s z3ctx (Mon.to_string_c dim_c)); lambda]] 
-            with Not_found -> sum
-            in
-          let sum = List.fold_left generate_lhs_sum (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0) ineq_dim_lambda in
-          let p_coef = 
-            try Z3.Arithmetic.Real.mk_numeral_s z3ctx (Mon.to_string_c (DimMap.find dim p_dim))
-            with Not_found -> Z3.Arithmetic.Real.mk_numeral_i z3ctx 0
-          in
-          if I.Mon.is_const (I.Mon.from_string_c "0", m) then
-            let r = Z3.Arithmetic.Real.mk_const_s z3ctx "r" in
-            Z3.Solver.add solver [Z3.Arithmetic.mk_ge z3ctx r (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0)]; (* r >= 0*)
-            Z3.Solver.add solver [Z3.Boolean.mk_eq z3ctx p_coef (Z3.Arithmetic.mk_add z3ctx [sum; r])];   (* p_coef = sum (lambda_i q_i) + r*)
-            Some r
-          else
-            (Z3.Solver.add solver [Z3.Boolean.mk_eq z3ctx p_coef sum]; (* p_coef = sum (lambda_i q_i)*)
-            r_var)
-        in
-      let r_opt = DimMap.fold generate_cnstrs dim_map None in
-      let r = 
-        match r_opt with 
-        | Some v -> v 
-        | None -> 
-          let re = Z3.Arithmetic.Real.mk_const_s z3ctx "r" in
-          Z3.Solver.add solver [Z3.Boolean.mk_eq z3ctx (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0) re];
-          re  
-      in
-      match (*Log.log_time_cum "z3 solve check"*) (Z3.Solver.check solver) [] with
-      | Z3.Solver.UNKNOWN | Z3.Solver.UNSATISFIABLE -> None
+  let find_cons ctx solver pot_cons biggest_flag_num = 
+    (*Z3.Solver.push solver;*)
+    let pot_cons_with_flags = List.mapi (fun i c -> (i, Z3.Boolean.mk_const_s ctx ("b" ^ (string_of_int (i + biggest_flag_num))), c)) pot_cons in
+    let round_f = Z3.Boolean.mk_const_s ctx ("r" ^ (string_of_int biggest_flag_num)) in
+    Z3.Solver.add solver [Z3.Boolean.mk_implies ctx round_f (Z3.Boolean.mk_not ctx (Z3.Boolean.mk_and ctx (List.map (fun (_, b, c) -> Z3.Boolean.mk_implies ctx b c) pot_cons_with_flags)))];
+    Z3.Solver.add solver [Z3.Boolean.mk_not ctx (Z3.Boolean.mk_and ctx (List.map (fun (_, b, c) -> Z3.Boolean.mk_implies ctx b c) pot_cons_with_flags))];
+    let rec aux cons_in_play cons_violated = 
+      let assumpts = List.concat (List.map (fun (_, clist) -> List.map (fun (_, b, _) -> Z3.Boolean.mk_not ctx b) clist) cons_violated) in
+      match Z3.Solver.check solver (round_f :: assumpts) with
+      | Z3.Solver.UNKNOWN -> failwith "Error in z3 solver"
+      | Z3.Solver.UNSATISFIABLE -> 
+        (*Z3.Solver.pop solver 1;*)
+        Z3.Solver.add solver (List.map (fun (_, _, c) -> c) cons_in_play);
+        Z3.Solver.add solver [Z3.Boolean.mk_not ctx round_f];
+        (List.map (fun (i, _, _) -> i) cons_in_play), (List.map (fun (m, clist) -> m, (List.map (fun (i, _, _) -> i) clist)) cons_violated)
       | Z3.Solver.SATISFIABLE ->
-        match Z3.Solver.get_model solver with
-        | None -> failwith "check is sat but no model?"
-        | Some model ->
-          let collect_lambdas pos_comb (lambda, ineq_id) = 
-            match Z3.Model.get_const_interp_e model lambda with
-            | None -> failwith "model doesn't have interpretation for a lambda"
-            | Some v ->
-              let lambdac = Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio v) in
-              if Mon.cmp lambdac (Mon.from_string_c "0") = 0 then pos_comb
-              else
-                (ineq_id, lambdac) :: pos_comb
+        (match Z3.Solver.get_model solver with
+        | None -> failwith "Error getting model"
+        | Some m ->
+          let partitioner (_, _, con) = 
+            let con_interp = match Z3.Model.eval m con true with | None -> failwith "Error getting interp" | Some e -> e in
+            Z3.Boolean.is_true con_interp
           in
-          let pos_comb = List.fold_left collect_lambdas [] ineq_dim_lambda in
-          match Z3.Model.get_const_interp_e model r with
-          | None -> failwith "model doesn't have interpretation for r"
-          | Some rv ->
-            let witness = Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio rv) in
-            Some (eq_just, PosComb (pos_comb, witness))
+          let cs_still_in_play, cs_violated = List.partition partitioner cons_in_play in
+          aux (List.rev cs_still_in_play) ((m, List.rev cs_violated) :: cons_violated)
+        )
+    in
+    aux pot_cons_with_flags []
 
+(*
+  let get_z3_consts form = 
+    let rec aux phi seen_asts consts = 
+      if BatISet.mem (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts then seen_asts, consts
+      else
+        if Z3.Expr.is_const phi then 
+          BatISet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts, BatISet.add ((Z3.Symbol.get_int % Z3.FuncDecl.get_name % Z3.Expr.get_func_decl) phi) consts
+        else
+          let children = Z3.Expr.get_args phi in
+          if children = [] then BatISet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts, consts
+          else
+            let new_seen_asts, new_consts = List.fold_left (fun (pasts, pconsts) child -> aux child pasts pconsts) (seen_asts, consts) children in
+            BatISet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) new_seen_asts, new_consts
+    in
+    snd (aux form (BatISet.empty) (BatISet.empty))*)
+
+(*
+  let ppmodel c f model = 
+    let model_interps = 
+      List.fold_left (fun acc fun_decl -> 
+        if Z3.Sort.get_sort_kind (Z3.FuncDecl.get_range fun_decl) = Z3enums.BOOL_SORT then acc (* Not a general solution *)
+        else
+          let interp = match Z3.Model.get_const_interp model fun_decl with
+          | None -> failwith "Const has no interpretation in model"
+          | Some e-> 
+            Log.log_line_s ~level:`trace (Z3.Expr.to_string e);
+            Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio e)
+          in
+          (get_mon c (Z3.Symbol.get_int (Z3.FuncDecl.get_name fun_decl)), interp) :: acc) [] (Z3.Model.get_const_decls model) in
+    Format.pp_open_hvbox f 0;
+    Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) (fun fo (monic, interp) -> ppmm fo monic; Format.pp_print_string fo (" = " ^ (Mon.to_string_c interp))) f model_interps
+    *)
+    
+
+  let complete_and_evaluate_model m form (*c*) = 
+    (*Log.log_line_s ~level:`trace "Trying to complete model: ";
+    Log.log (ppmodel c) (Some m);*)
+    (*let model_interps = 
+      List.fold_left (fun map fun_decl -> 
+        if Z3.Sort.get_sort_kind (Z3.FuncDecl.get_range fun_decl) = Z3enums.BOOL_SORT then map (* Not a general solution *)
+        else
+          let interp = match Z3.Model.get_const_interp m fun_decl with
+          | None -> failwith "Const has no interpretation in model"
+          | Some e-> 
+            Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio e)
+          in
+          BatIMap.add (Z3.Symbol.get_int (Z3.FuncDecl.get_name fun_decl)) interp map) (BatIMap.empty ~eq:(fun a b -> Mon.cmp a b = 0)) (Z3.Model.get_const_decls m) in
+    *)
+    let partial_eval = match Z3.Model.eval m form true with | None -> failwith "Error evaluating model" | Some e -> e in
+    partial_eval
+    (*let rem_consts = get_z3_consts partial_eval in
+    let folder dim (z3vare, z3interp) = 
+      let mon = get_mon c dim in
+      Log.log_s ~level:`trace "Trying to eval ";
+      Log.log ~level:`trace ppmm (Some mon);
+      let vars = Mon.get_vars mon in
+      let var_interp = BatList.of_enum (BatEnum.map (fun v -> v, BatIMap.find (get_dim c (snd (Mon.make_mon_from_var v 1))) model_interps) vars) in
+      let mon_interp = Mon.eval_monic var_interp mon in
+      Log.log_s ~level:`trace ("Compound mon: " ^ (Mon.to_string_c mon_interp) ^ " = ");
+      Log.log ~level:`trace ppmm (Some mon);
+      Log.log_line_s ~level:`trace "Variable Assign";
+      List.iter (fun (v, i) -> Log.log_line_s ~level:`trace (v ^ " = " ^ (Mon.to_string_c i))) var_interp;
+      Z3.Arithmetic.Real.mk_const c.z3ctx (Z3.Symbol.mk_int c.z3ctx dim) :: z3vare, Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c mon_interp) :: z3interp
+    in
+    let (vars, interps) = BatISet.fold folder rem_consts ([], []) in
+    Z3.Expr.simplify (Z3.Expr.substitute partial_eval vars interps) None*)
+
+  let saturate (c : cone) (impls : impl list) =
+    let impls_red = 
+      List.map 
+        (fun (h, cons) -> 
+          let (c_red, mults) = I.reduce_just cons c.ideal in
+          (I.reduce h c.ideal, (c_red, {orig = cons; mults}))) impls
+    in
+    let const_dim = get_dim c (snd (Mon.make_mon_from_coef (Mon.from_string_c "0"))) in
+    let dim_map_to_z3_ineq ineq = 
+      let term_to_z3 dim coef = 
+        if dim = const_dim then Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c coef)
+        else
+          Z3.Arithmetic.mk_mul c.z3ctx [Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c coef); Z3.Arithmetic.Real.mk_const c.z3ctx (Z3.Symbol.mk_int c.z3ctx dim)]
+      in
+      Z3.Arithmetic.mk_ge c.z3ctx (Z3.Arithmetic.mk_add c.z3ctx (BatIMap.fold (fun d i l -> (term_to_z3 d i) :: l) ineq [])) (Z3.Arithmetic.Real.mk_numeral_i c.z3ctx 0)
+    in
+    let dim_map_to_z3_eq ineq = 
+      let term_to_z3 dim coef = 
+        if dim = const_dim then Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c coef)
+        else
+          Z3.Arithmetic.mk_mul c.z3ctx [Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c coef); Z3.Arithmetic.Real.mk_const c.z3ctx (Z3.Symbol.mk_int c.z3ctx dim)]
+      in
+      Z3.Boolean.mk_eq c.z3ctx (Z3.Arithmetic.mk_add c.z3ctx (BatIMap.fold (fun d i l -> (term_to_z3 d i) :: l) ineq [])) (Z3.Arithmetic.Real.mk_numeral_i c.z3ctx 0)
+    in
+    let solver = Z3.Solver.mk_simple_solver c.z3ctx in
+    Z3.Solver.add solver (BatList.of_enum (BatEnum.map (fun (_, _, (i, _)) -> dim_map_to_z3_ineq i) (BatIMap.enum c.ineqs)));
+    let z3_impls = List.map (fun (h, (cons, _)) -> dim_map_to_z3_ineq (poly_to_dim c h), dim_map_to_z3_ineq (poly_to_dim c cons)) impls_red in
+    Z3.Solver.add solver (List.map (fun (h, cons) -> Z3.Boolean.mk_implies c.z3ctx h cons) z3_impls);
+    let pot_ineqs = List.mapi (fun i (_, cons) -> (i, cons, true)) z3_impls in
+    let pot_eqs = BatList.of_enum (BatEnum.map (fun (id, _, (i, _)) -> id, dim_map_to_z3_eq i, false) (BatIMap.enum c.ineqs)) in
+    let rec find_all_cons cons_in_play cons_not_in_play curr_num co = 
+      Log.log_line_s ~level:`trace "Curr cone";
+      Log.log ppc ~level:`trace (Some co);
+      let cons, violated_cons_and_models = find_cons co.z3ctx solver (List.map (fun (_, f, _) -> f) cons_in_play) curr_num in
+      if cons = [] then co
+      else
+        let found_cons = List.map (List.nth cons_in_play) cons in
+        let num_found = ref 0 in
+        let sort_cons_found_cons (cone, found_eqs, new_pot_eqs, new_ineqs) (id, _, is_ineq) = 
+          if is_ineq then
+            (num_found := !num_found + 1;
+            let (_, (ineq_to_add, just)) = List.nth impls_red id in
+            let conee, added = add_ineq cone ineq_to_add (Given just) in
+            let (added_id, non_lin) = match added with | [] -> failwith "Added no ineqs?" | x :: xs -> x, xs in
+            let added_ineqs = (List.map (fun id -> dim_map_to_z3_ineq (fst (BatIMap.find id conee.ineqs))) non_lin) in
+            Z3.Solver.add solver added_ineqs;
+            let pot_eqs = (added_id, dim_map_to_z3_eq (fst (BatIMap.find added_id conee.ineqs)), false) :: List.map (fun id -> id, dim_map_to_z3_eq (fst (BatIMap.find id conee.ineqs)), false) non_lin in
+            (conee, found_eqs, pot_eqs @ new_pot_eqs, added_ineqs @ new_ineqs))
+          else
+            (cone, id :: found_eqs, new_pot_eqs, new_ineqs)
+        in
+        let temp_cone, found_eqs, new_pot_eqs, new_ineqs = List.fold_left sort_cons_found_cons (co, [], [], []) found_cons in
+        let cons_not_in_play_with_models = cons_not_in_play @ (List.map (fun (m, clist) -> m, (List.map (fun i -> List.nth cons_in_play i) clist)) violated_cons_and_models) in
+        let new_ineqs_conj = Z3.Boolean.mk_and temp_cone.z3ctx new_ineqs in
+        let (cons_not_in_play_this_round, new_pot_cons) = 
+          List.partition (fun (m, _) -> 
+            Z3.Boolean.is_true (complete_and_evaluate_model m new_ineqs_conj (*temp_cone*))) cons_not_in_play_with_models in
+        Log.log_line_s ~level:`trace ("Found " ^ (string_of_int !num_found) ^ " new consequences");
+        Log.log_line_s ~level:`trace ("Found " ^ (string_of_int (List.length found_eqs)) ^ " new equations");
+        Log.log_line_s ~level:`trace ((string_of_int (List.length cons_not_in_play_this_round)) ^ " old cons are still violated in new form");
+        find_all_cons (List.concat (new_pot_eqs :: List.map snd new_pot_cons)) cons_not_in_play_this_round (curr_num + List.length cons_in_play) (upgrade_ineqs temp_cone found_eqs)
+    in
+    find_all_cons (pot_eqs @ pot_ineqs) [] 0 c
+  (*
 
   let upgrade_ineqs c ineqs_to_upgrade = 
     let collect_ineqs_to_remove id (_, just) to_remove = 
@@ -885,10 +1054,10 @@ module Cone(C : Sigs.Coefficient) = struct
           let new_eqs = List.fold_left collect_new_eqs [] ineq_dim_lambda in
           check_line (upgrade_ineqs co new_eqs)
     in
-    check_line c  
+    check_line c  *)
 
 
-  let pp_used_th c fo id = 
+  (*let pp_used_th c fo id = 
     Format.pp_print_string fo "Theorem "; Format.pp_print_int fo id; Format.pp_print_string fo ":";
     pp ~ord:c.ideal.ord fo (fst (BatIMap.find id c.ineqs)); Format.pp_print_string fo " >= 0"
 
@@ -964,51 +1133,106 @@ module Cone(C : Sigs.Coefficient) = struct
     Format.pp_print_string f "QED";
     Format.pp_force_newline f ();
     Format.pp_close_box f ()
+    *)
 
-  let reduce_ineq ord p ineqs = 
+  let preprocess_ineqs p c = 
+    let (_, lm) = I.lt (I.make_sorted_poly c.ideal.ord p) in
+    let const_dim = BatISet.choose (BatIMap.domain (poly_to_dim c (from_const_s "0"))) in
+    let folder id (ineq, _) (consts, parity_map) = 
+      let ineq_list = List.sort (fun i j -> (-1) * (c.ideal.ord (BatIMap.find i c.dim_to_mon) (BatIMap.find j c.dim_to_mon))) (BatISet.elements (BatIMap.domain ineq)) in
+      if List.length ineq_list = 0 then (id :: consts, parity_map)
+      else if List.length ineq_list = 1 && const_dim = List.hd ineq_list then 
+        let dim_coef = BatIMap.find (List.hd ineq_list) ineq in
+        if Mon.cmp dim_coef (Mon.from_string_c "0") < 0 then failwith "Negative const in polyhedron"
+        else (id :: consts, parity_map)
+      else
+        let bigger_mons = List.filter (fun i -> c.ideal.ord (BatIMap.find i c.dim_to_mon) lm > 0) ineq_list in
+        let update_map map dim = 
+          if BatIMap.mem dim map then
+            (match BatIMap.find dim map with
+            | None -> map
+            | Some par -> 
+              let dim_coef = BatIMap.find dim ineq in
+              if Mon.cmp dim_coef (Mon.from_string_c "0") = 0 then failwith "ineq has 0 coeficient";
+              let dim_par = if Mon.cmp dim_coef (Mon.from_string_c "0") > 0 then 1 else (-1) in
+              if par = dim_par then map
+              else BatIMap.modify dim (fun _ -> None) map)
+          else
+            let dim_coef = BatIMap.find dim ineq in
+            if Mon.cmp dim_coef (Mon.from_string_c "0") = 0 then failwith "ineq has 0 coeficient";
+            let dim_par = if Mon.cmp dim_coef (Mon.from_string_c "0") > 0 then 1 else (-1) in
+            BatIMap.add dim (Some dim_par) map
+        in
+        (consts, List.fold_left update_map parity_map bigger_mons)
+    in
+    let (const_ineqs, parity_map) = BatIMap.fold folder c.ineqs ([], BatIMap.empty ~eq:(=)) in
+    let collect_irrelevant_dims dim par irrelevant_dims =
+      match par with
+      | None -> irrelevant_dims
+      | Some _ -> dim :: irrelevant_dims
+    in
+    let irrelevant_dims = BatIMap.fold collect_irrelevant_dims parity_map [] in
+    let find_ineq_to_remove id (ineq, _) ineqs_to_remove = 
+      if List.exists (fun dim -> BatIMap.mem dim ineq) irrelevant_dims then id :: ineqs_to_remove
+      else ineqs_to_remove
+    in
+    let ineqs_to_remove = BatIMap.fold find_ineq_to_remove c.ineqs const_ineqs in
+    Log.log_line_s ~level:`trace ("Preprocessing removed " ^ (string_of_int (List.length ineqs_to_remove)) ^ " ineqs");
+    List.fold_left (fun map id_to_remove-> BatIMap.remove id_to_remove map) c.ineqs ineqs_to_remove
+
+  let reduce_ineq p c = 
     match is_const p with
     | Some _ -> [], p
     | None ->
-      let ids = BatISet.elements (BatIMap.domain ineqs) in
+      let preprocessed_ineqs = preprocess_ineqs p c in
+      let ids = BatISet.elements (BatIMap.domain preprocessed_ineqs) in
       if List.length ids = 0 then [], p
       else 
-        let z3ctx = Z3.mk_context [] in
-        let solver = Z3.Optimize.mk_opt z3ctx in
-        let dim_map, p_dim, p_ineq = polys_to_dim ~ord:(Some ord) p ineqs in
-        let lambdas = List.map (fun id -> (Z3.Arithmetic.Real.mk_const_s z3ctx ("lambda" ^ (string_of_int id)))) ids in
-        Z3.Optimize.add solver (List.map (fun lambda -> Z3.Arithmetic.mk_le z3ctx lambda (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0)) lambdas);
-        let ineq_dim_lambda = List.combine lambdas ids in
-      (*let add_pos_mult i ineq = 
-        Lp.Poly.of_var (Lp.Var.make ~ub:0. ("lambda" ^ (string_of_int i))), ineq
-      in
-      let ineq_dim_lambda = List.mapi add_pos_mult ineq_dim in*)
-        let generate_cnstrs dim _ (hard_cnsts, r_cnsts) = 
-          let generate_lhs_sum sum (lambda, ineq_id) = 
-            try 
-              let dim_c = DimMap.find dim (BatIMap.find ineq_id p_ineq) in
-              Z3.Arithmetic.mk_add z3ctx [sum; Z3.Arithmetic.mk_mul z3ctx [(Z3.Arithmetic.Real.mk_numeral_s z3ctx (Mon.to_string_c dim_c)); lambda]] 
-            with Not_found -> sum
-            in
-          let sum = List.fold_left generate_lhs_sum (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0) ineq_dim_lambda in
-          let r = Z3.Arithmetic.Real.mk_const_s z3ctx ("r" ^ (string_of_int dim)) in
-          let p_coef = 
-            try Z3.Arithmetic.Real.mk_numeral_s z3ctx (Mon.to_string_c (DimMap.find dim p_dim))
-            with Not_found -> Z3.Arithmetic.Real.mk_numeral_i z3ctx 0
+        let solver = Z3.Optimize.mk_opt c.z3ctx in
+        let folder id (ineq, _) (dim_sum_map, ls) = 
+          let lambda = Z3.Arithmetic.Real.mk_const_s c.z3ctx ("lambda" ^ (string_of_int id)) in
+          let collect_ineq_dims dim coef map = 
+            BatIMap.modify_opt dim
+              (fun old_e ->
+                match old_e with
+                | None -> Some (Z3.Arithmetic.mk_mul c.z3ctx [lambda; (Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c coef))])
+                | Some e -> Some (Z3.Arithmetic.mk_add c.z3ctx [e; Z3.Arithmetic.mk_mul c.z3ctx [lambda; (Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c coef))]])
+              ) map
           in
-          let new_cnst = Z3.Boolean.mk_eq z3ctx (Z3.Arithmetic.mk_add z3ctx [sum; r]) p_coef in
-          new_cnst :: hard_cnsts, r :: r_cnsts
+          Z3.Optimize.add solver [Z3.Arithmetic.mk_le c.z3ctx lambda (Z3.Arithmetic.Real.mk_numeral_i c.z3ctx 0)];
+          BatIMap.fold collect_ineq_dims ineq dim_sum_map, lambda :: ls
         in
-        let hard_cnsts, r_cnsts = DimMap.fold generate_cnstrs dim_map ([], []) in
-        Z3.Optimize.add solver hard_cnsts;
-        List.iteri (fun i r -> let _ = Z3.Optimize.add_soft solver (Z3.Boolean.mk_eq z3ctx r (Z3.Arithmetic.Real.mk_numeral_i z3ctx 0)) "1" (Z3.Symbol.mk_int z3ctx i) in ()) (List.rev r_cnsts);
-        let _ = Z3.Optimize.maximize solver (Z3.Arithmetic.mk_add z3ctx lambdas) in
+        let dim_sum_map, lambdas = BatIMap.fold folder preprocessed_ineqs (BatIMap.empty ~eq:(fun _ _ -> false), []) in
+        Log.log_line_s ~level:`trace (string_of_int (BatISet.cardinal (BatIMap.domain dim_sum_map)) ^ " dimensions");
+        Log.log_line_s ~level:`trace ((string_of_int (List.length lambdas)) ^ " ineqs");
+        let p_dim_map = poly_to_dim c p in
+        let dims_sorted_small_to_big = 
+          List.sort (fun i_dim j_dim -> c.ideal.ord (BatIMap.find i_dim c.dim_to_mon) (BatIMap.find j_dim c.dim_to_mon)) 
+            (BatISet.elements (BatISet.union (BatIMap.domain dim_sum_map) (BatIMap.domain p_dim_map))) in
+        let dims_and_r_cons = List.map
+          (fun dim -> 
+            let r = Z3.Arithmetic.Real.mk_const_s c.z3ctx ("r" ^ (string_of_int dim)) in
+            if BatIMap.mem dim p_dim_map && BatIMap.mem dim dim_sum_map then
+              (let p_coef = BatIMap.find dim p_dim_map in
+              Z3.Optimize.add solver [Z3.Boolean.mk_eq c.z3ctx (Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c p_coef)) (Z3.Arithmetic.mk_add c.z3ctx [r; BatIMap.find dim dim_sum_map])]; (* p_c = sum lambda_i + r *)
+              (dim, r))
+            else if BatIMap.mem dim p_dim_map then
+              (let p_coef = BatIMap.find dim p_dim_map in
+              Z3.Optimize.add solver [Z3.Boolean.mk_eq c.z3ctx (Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c p_coef)) r]; (* p_c = r*)
+              (dim, r))
+            else
+              (Z3.Optimize.add solver [Z3.Boolean.mk_eq c.z3ctx (Z3.Arithmetic.Real.mk_numeral_i c.z3ctx 0) (Z3.Arithmetic.mk_add c.z3ctx [r; BatIMap.find dim dim_sum_map])]; (* 0 = sum lambda_i + r*)
+              (dim, r))
+          ) dims_sorted_small_to_big in
+        List.iter (fun (dim, r) -> let _ = Z3.Optimize.add_soft solver (Z3.Boolean.mk_eq c.z3ctx r (Z3.Arithmetic.Real.mk_numeral_i c.z3ctx 0)) "1" (Z3.Symbol.mk_int c.z3ctx dim) in ()) (List.rev dims_and_r_cons);
+        let _ = Z3.Optimize.maximize solver (Z3.Arithmetic.mk_add c.z3ctx lambdas) in
         match Log.log_time_cum "z3 solve reduction" Z3.Optimize.check solver with
         | Z3.Solver.UNKNOWN | Z3.Solver.UNSATISFIABLE -> failwith "unable to solve linear program"
         | Z3.Solver.SATISFIABLE ->
           match Z3.Optimize.get_model solver with
           | None -> failwith "Z3 has no model"
           | Some model ->
-            let collect_lambdas neg_comb (lambda, ineq_id) = 
+            (*let collect_lambdas neg_comb (lambda, ineq_id) = 
               match (Z3.Model.get_const_interp_e model lambda) with
               | None -> failwith "Z3 model doesn't have a lambda"
               | Some lc ->
@@ -1017,40 +1241,30 @@ module Cone(C : Sigs.Coefficient) = struct
                 else
                   (lambdac, ineq_id) :: neg_comb
             in
-            let neg_comb = List.fold_left collect_lambdas [] ineq_dim_lambda in
-            let collect_remainder rem r_s = 
-              match (Z3.Model.get_const_interp_e model r_s) with
+            let neg_comb = List.fold_left collect_lambdas [] ineq_dim_lambda in*)
+            let collect_remainder rem (r_dim, r_e) = 
+              match (Z3.Model.get_const_interp_e model r_e) with
               | None -> failwith "Z3 model doesn't have an r"
               | Some rv ->
                 let rc = Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio rv) in
                 if Mon.cmp rc (Mon.from_string_c "0") = 0 then rem
                 else
-                  let r_string = Z3.Expr.to_string r_s in
-                  let r_dim = int_of_string (String.sub r_string 1 ((String.length r_string) - 1)) in
-                  (rc, DimMap.find r_dim dim_map) :: rem
+                  (rc, BatIMap.find r_dim c.dim_to_mon) :: rem
             in
-            let rem = from_mon_list (List.fold_left collect_remainder [] r_cnsts) in
-            neg_comb, rem
+            let rem = from_mon_list (List.fold_left collect_remainder [] dims_and_r_cons) in
+            [], rem
         
   let reduce_eq p c = I.reduce p c.ideal
 
   let reduce p c = 
-    let p_ired, mults = Log.log_time_cum "reduce eq" (I.reduce_just p) c.ideal in
-    let neg_comb, p_ineq_red = Log.log_time_cum "reduce ineq" (reduce_ineq c.ideal.ord p_ired) c.ineqs in
-    let eq_just = {orig = p_ired; mults} in
-    Log.log ~level:`debug pp_red (Some (eq_just, neg_comb, p_ineq_red, c));
+    let p_ired, (*mults*)_ = Log.log_time_cum "reduce eq" (I.reduce_just p) c.ideal in
+    let (*neg_comb*)_, p_ineq_red = Log.log_time_cum "reduce ineq" (reduce_ineq p_ired) c in
+    (*let eq_just = {orig = p_ired; mults} in
+    Log.log ~level:`debug pp_red (Some (eq_just, neg_comb, p_ineq_red, c));*)
     p_ineq_red
     
 
-  let get_eq_basis c = I.get_generators c.ideal
-
-  let get_ineq_basis c = 
-    if List.length c.ineqs_prod = 0 then [I.from_const_s "0"]
-    else
-      let first_level = List.map List.hd (List.hd c.ineqs_prod) in
-      List.map (fun i -> fst (BatIMap.find i c.ineqs)) first_level
-
-  let saturate c impls = 
+  (*let saturate c impls = 
     let rec aux curr_cone worklist tried = 
       match worklist with
       | [] -> curr_cone
@@ -1062,53 +1276,33 @@ module Cone(C : Sigs.Coefficient) = struct
            let eq_just = {orig = con; mults} in
            aux (add_ineq curr_cone con_red (Given (eq_just, (Some just)))) (rest @ tried) []
     in
-    aux c impls []
+    aux c impls []*)
 
+  
   let make_cone ?(sat = 1) ?(ord = I.grlex_ord) ?(eqs = []) ?(ineqs = []) ?(impls = []) () = 
     let ideal = make_ideal ord eqs in
     let red_add_ine co ine = 
       let ine_red, mults = I.reduce_just ine co.ideal in
       let eq_just = {orig = ine_red; mults} in
-      add_ineq co ine_red (Given (eq_just, None))
+      fst (add_ineq co ine_red (Given (eq_just)))
     in
-    let prod_sat_cone = List.fold_left red_add_ine {depth=sat; curr_num = 0; ideal= ideal; ineqs= BatIMap.empty ~eq:(fun _ _ -> false); ineqs_prod = []} ineqs in
+    let prod_sat_cone = List.fold_left red_add_ine (make_empty_cone sat ideal) ineqs in
     let unnormal_c = saturate prod_sat_cone impls in
-    normalize unnormal_c
+    (*normalize unnormal_c*)
+    unnormal_c
 
   let make_cone_i ?(sat = 1) ?(ineqs = []) ?(impls = []) ideal = 
     let red_add_ine co ine = 
       let ine_red, mults = I.reduce_just ine co.ideal in
       let eq_just = {orig = ine_red; mults} in
-      add_ineq co ine_red (Given (eq_just, None))
+      fst (add_ineq co ine_red (Given (eq_just)))
     in
     let prod_sat_cone = 
-      Log.log_time_cum "prod sat" (List.fold_left red_add_ine {depth=sat; curr_num = 0; ideal= ideal; ineqs= BatIMap.empty ~eq:(fun _ _ -> false); ineqs_prod = []}) ineqs in
+      Log.log_time_cum "prod sat" (List.fold_left red_add_ine (make_empty_cone sat ideal)) ineqs in
     let unnormal_c = Log.log_time_cum "impl sat" (saturate prod_sat_cone) impls in
-    Log.log_time_cum "normalize" normalize unnormal_c
+    (*Log.log_time_cum "normalize" normalize unnormal_c*)
+    unnormal_c
   
-  let ppc f c = 
-      Format.pp_print_string f "Cone:"; Format.pp_print_space f ();
-      ppi f c.ideal;
-      Format.pp_force_newline f ();
-      if BatIMap.is_empty c.ineqs then Format.pp_print_string f "Ineqs: [0]"
-      else
-        Format.pp_open_hbox f ();
-        Format.pp_print_string f "Basis Ineqs:";
-        Format.print_space ();
-        Format.pp_print_string f "["; 
-        Format.pp_open_box f 0;
-        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (get_ineq_basis c);
-        Format.pp_print_string f "]";
-        Format.pp_close_box f (); Format.pp_close_box f ();
-        (*Format.pp_force_newline f ();
-        Format.pp_open_hbox f ();
-        Format.pp_print_string f "Derived Ineqs:";
-        Format.print_space ();
-        Format.pp_print_string f "["; 
-        Format.pp_open_box f 0;
-        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (BatList.of_enum (BatEnum.map (fun (_, _, (i, _)) -> i) (BatIMap.enum c.ineqs)));
-        Format.pp_print_string f "]";
-        Format.pp_close_box f (); Format.pp_close_box f ()*)
 
 end
 

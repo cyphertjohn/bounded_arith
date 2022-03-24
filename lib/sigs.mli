@@ -14,6 +14,8 @@ module type Coefficient = sig
     (**Field division. *)
     val divc : coef -> coef -> coef 
 
+    val exp : coef -> int -> coef
+
     (**Testing if equal to zero. *)
     val is_zero : coef -> bool
 
