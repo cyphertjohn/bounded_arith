@@ -591,8 +591,8 @@ module Cone(C : Sigs.Coefficient) = struct
       ineqs_prod : int list list list
     }
 
-  let make_empty_cone depth ideal = 
-    {z3ctx = Z3.mk_context []; depth; ideal; curr_num = 0; curr_mon = 0; mon_to_dim = BatHashtbl.create 50; dim_to_mon = BatIMap.empty ~eq:(fun a b -> Mon.lex_ord a b =0); ineqs = BatIMap.empty ~eq:(fun _ _ -> false); ineqs_prod = []}
+  let make_empty_cone depth ideal =
+    {z3ctx = Z3.mk_context []; depth; ideal; curr_num = 0; curr_mon = 0; mon_to_dim = BatHashtbl.create 300; dim_to_mon = BatIMap.empty ~eq:(fun a b -> Mon.lex_ord a b =0); ineqs = BatIMap.empty ~eq:(fun _ _ -> false); ineqs_prod = []}
 
 
   let get_dim c m = 
@@ -818,12 +818,12 @@ module Cone(C : Sigs.Coefficient) = struct
     in
     aux pot_cons_with_flags []
 
-(*
+
   let get_z3_consts form = 
     let rec aux phi seen_asts consts = 
       if BatISet.mem (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts then seen_asts, consts
       else
-        if Z3.Expr.is_const phi then 
+        if Z3.Expr.is_const phi && (not (Z3.Boolean.is_true phi || Z3.Boolean.is_false phi)) then 
           BatISet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts, BatISet.add ((Z3.Symbol.get_int % Z3.FuncDecl.get_name % Z3.Expr.get_func_decl) phi) consts
         else
           let children = Z3.Expr.get_args phi in
@@ -832,10 +832,10 @@ module Cone(C : Sigs.Coefficient) = struct
             let new_seen_asts, new_consts = List.fold_left (fun (pasts, pconsts) child -> aux child pasts pconsts) (seen_asts, consts) children in
             BatISet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) new_seen_asts, new_consts
     in
-    snd (aux form (BatISet.empty) (BatISet.empty))*)
+    snd (aux form (BatISet.empty) (BatISet.empty))
 
-(*
-  let ppmodel c f model = 
+
+  (*let ppmodel c f model = 
     let model_interps = 
       List.fold_left (fun acc fun_decl -> 
         if Z3.Sort.get_sort_kind (Z3.FuncDecl.get_range fun_decl) = Z3enums.BOOL_SORT then acc (* Not a general solution *)
@@ -843,7 +843,6 @@ module Cone(C : Sigs.Coefficient) = struct
           let interp = match Z3.Model.get_const_interp model fun_decl with
           | None -> failwith "Const has no interpretation in model"
           | Some e-> 
-            Log.log_line_s ~level:`trace (Z3.Expr.to_string e);
             Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio e)
           in
           (get_mon c (Z3.Symbol.get_int (Z3.FuncDecl.get_name fun_decl)), interp) :: acc) [] (Z3.Model.get_const_decls model) in
@@ -852,10 +851,8 @@ module Cone(C : Sigs.Coefficient) = struct
     *)
     
 
-  let complete_and_evaluate_model m form (*c*) = 
-    (*Log.log_line_s ~level:`trace "Trying to complete model: ";
-    Log.log (ppmodel c) (Some m);*)
-    (*let model_interps = 
+  let complete_and_evaluate_model m new_ineqs form c = 
+    let model_interps = 
       List.fold_left (fun map fun_decl -> 
         if Z3.Sort.get_sort_kind (Z3.FuncDecl.get_range fun_decl) = Z3enums.BOOL_SORT then map (* Not a general solution *)
         else
@@ -865,25 +862,44 @@ module Cone(C : Sigs.Coefficient) = struct
             Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio e)
           in
           BatIMap.add (Z3.Symbol.get_int (Z3.FuncDecl.get_name fun_decl)) interp map) (BatIMap.empty ~eq:(fun a b -> Mon.cmp a b = 0)) (Z3.Model.get_const_decls m) in
-    *)
-    let partial_eval = match Z3.Model.eval m form true with | None -> failwith "Error evaluating model" | Some e -> e in
-    partial_eval
-    (*let rem_consts = get_z3_consts partial_eval in
-    let folder dim (z3vare, z3interp) = 
-      let mon = get_mon c dim in
-      Log.log_s ~level:`trace "Trying to eval ";
-      Log.log ~level:`trace ppmm (Some mon);
-      let vars = Mon.get_vars mon in
-      let var_interp = BatList.of_enum (BatEnum.map (fun v -> v, BatIMap.find (get_dim c (snd (Mon.make_mon_from_var v 1))) model_interps) vars) in
-      let mon_interp = Mon.eval_monic var_interp mon in
-      Log.log_s ~level:`trace ("Compound mon: " ^ (Mon.to_string_c mon_interp) ^ " = ");
-      Log.log ~level:`trace ppmm (Some mon);
-      Log.log_line_s ~level:`trace "Variable Assign";
-      List.iter (fun (v, i) -> Log.log_line_s ~level:`trace (v ^ " = " ^ (Mon.to_string_c i))) var_interp;
-      Z3.Arithmetic.Real.mk_const c.z3ctx (Z3.Symbol.mk_int c.z3ctx dim) :: z3vare, Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c mon_interp) :: z3interp
+    let folder interp_map new_ineq_id = 
+      match BatIMap.find new_ineq_id c.ineqs with
+      | (_, Product (_, prod_list)) ->
+        let prod_folder prod_map prod_id = 
+          let prod_coef_map, _ = BatIMap.find prod_id c.ineqs in
+          let mon_prod_folder modeldim curr_interp acc =
+            let mon_mon_folder dim _ inner_map = 
+              let mon1 = get_mon c dim in
+              if Mon.is_const (Mon.from_string_c "1", mon1) then inner_map
+              else
+                let mon2 = get_mon c modeldim in
+                let model_interp = 
+                  try Mon.mulc curr_interp (BatIMap.find dim model_interps)
+                  with Not_found ->
+                    failwith ("Don't have an interp for " ^ (snd (Mon.mon_to_string (Mon.from_string_c "1", mon1)))) in
+                let (_, prod_mon) = Mon.mult_mon (Mon.from_string_c "1", mon1) (Mon.from_string_c "1", mon2) in
+                let prod_dim = get_dim c prod_mon in
+                if BatIMap.mem prod_dim inner_map || BatIMap.mem prod_dim model_interps then inner_map
+                else BatIMap.add prod_dim model_interp inner_map
+            in
+            BatIMap.fold mon_mon_folder prod_coef_map acc
+          in
+          BatIMap.fold mon_prod_folder prod_map (BatIMap.empty ~eq:(fun a b -> Mon.cmp a b = 0))
+        in
+        let ineq_interps = List.fold_left prod_folder (fst (BatIMap.find (List.hd prod_list) c.ineqs)) (List.tl prod_list) in
+        BatIMap.union (fun a _ -> a) interp_map ineq_interps
+      | _ -> failwith "only know how to complete products"
     in
-    let (vars, interps) = BatISet.fold folder rem_consts ([], []) in
-    Z3.Expr.simplify (Z3.Expr.substitute partial_eval vars interps) None*)
+    let new_mon_interps = List.fold_left folder (BatIMap.empty ~eq:(fun a b -> Mon.cmp a b = 0)) new_ineqs in
+    let partial_eval = match Z3.Model.eval m form false with | None -> failwith "Error evaluating model" | Some e -> e in
+    let rem_consts = get_z3_consts partial_eval in
+    let get_interps dim = 
+      try 
+        Z3.Arithmetic.Real.mk_const c.z3ctx (Z3.Symbol.mk_int c.z3ctx dim), Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (Mon.to_string_c (BatIMap.find dim new_mon_interps))
+      with Not_found -> Z3.Arithmetic.Real.mk_const c.z3ctx (Z3.Symbol.mk_int c.z3ctx dim), Z3.Arithmetic.Real.mk_numeral_i c.z3ctx 0
+    in
+    let vars, interps = List.split (List.map get_interps (BatISet.elements rem_consts)) in
+    Z3.Expr.simplify (Z3.Expr.substitute partial_eval vars interps) None
 
   let saturate (c : cone) (impls : impl list) =
     let impls_red = 
@@ -932,16 +948,16 @@ module Cone(C : Sigs.Coefficient) = struct
             let added_ineqs = (List.map (fun id -> dim_map_to_z3_ineq (fst (BatIMap.find id conee.ineqs))) non_lin) in
             Z3.Solver.add solver added_ineqs;
             let pot_eqs = (added_id, dim_map_to_z3_eq (fst (BatIMap.find added_id conee.ineqs)), false) :: List.map (fun id -> id, dim_map_to_z3_eq (fst (BatIMap.find id conee.ineqs)), false) non_lin in
-            (conee, found_eqs, pot_eqs @ new_pot_eqs, added_ineqs @ new_ineqs))
+            (conee, found_eqs, pot_eqs @ new_pot_eqs, non_lin @ new_ineqs))
           else
             (cone, id :: found_eqs, new_pot_eqs, new_ineqs)
         in
         let temp_cone, found_eqs, new_pot_eqs, new_ineqs = List.fold_left sort_cons_found_cons (co, [], [], []) found_cons in
         let cons_not_in_play_with_models = cons_not_in_play @ (List.map (fun (m, clist) -> m, (List.map (fun i -> List.nth cons_in_play i) clist)) violated_cons_and_models) in
-        let new_ineqs_conj = Z3.Boolean.mk_and temp_cone.z3ctx new_ineqs in
+        let new_ineqs_conj = Z3.Boolean.mk_and temp_cone.z3ctx (List.map (fun id -> dim_map_to_z3_ineq (fst (BatIMap.find id temp_cone.ineqs))) new_ineqs) in
         let (cons_not_in_play_this_round, new_pot_cons) = 
           List.partition (fun (m, _) -> 
-            Z3.Boolean.is_true (complete_and_evaluate_model m new_ineqs_conj (*temp_cone*))) cons_not_in_play_with_models in
+            Z3.Boolean.is_true (complete_and_evaluate_model m new_ineqs new_ineqs_conj temp_cone)) cons_not_in_play_with_models in
         Log.log_line_s ~level:`trace ("Found " ^ (string_of_int !num_found) ^ " new consequences");
         Log.log_line_s ~level:`trace ("Found " ^ (string_of_int (List.length found_eqs)) ^ " new equations");
         Log.log_line_s ~level:`trace ((string_of_int (List.length cons_not_in_play_this_round)) ^ " old cons are still violated in new form");
