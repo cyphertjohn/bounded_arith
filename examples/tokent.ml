@@ -2,7 +2,7 @@ open Bound.Expr
 
 let () = Bound.Log.log_times := true
 
-let vars_to_keep = ["x"; "supply0"; "balance0"]
+let vars_to_keep = ["x"; "supply0"; "balance0"; "liquidFunds"]
 
 let withdrawSplit = List.map from_string [
 					(* withdraw x *)
