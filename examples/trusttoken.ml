@@ -5,18 +5,25 @@ let () = Bound.Log.log_times := true
 let vars_to_keep = ["x"; "supply0"; "balance0"]
 
 let withdrawSplit = List.map from_string [
-					"floor(x * balance0 / supply0) - amountSplit1";
-					"balance0 - amountSplit1 - balance1";
-					"floor(x * balance1 / supply0) - amountSplit2";
-					"balance1 - amountSplit2 - balanceSplit";
-					"balance2 - resSplit"
+					(* withdraw x *)
+					"floor(x * liquidFunds / supply0) - amountSplit1";
+					"balance0 - x - balance1Burn";
+					"supply0 - x - supply1";
+					"balance1Burn - amountSplit1 - balance1Withdrawn";
+					(* withdraw x *)
+					"floor(x * liquidFunds / supply1) - amountSplit2";
+					"balance1Withdrawn - x - balance2Burn";
+					(* "supply1 - x - supply2"; *)
+					"balance2Burn - amountSplit2 - balanceSplit";
 				] 
 let withdrawJoined = List.map from_string [
-					"floor((x * 2) * balance0 / supply0) - amountJoined";
-					"balance0 - amountJoined - balanceJoined";
+					"floor((x * 2) * liquidFunds / supply0) - amountJoined";
+					"balance0 - (x * 2) - balance1Burn";
+					(* "supply0 - (x * 2) - supply1"; *)
+					"balance1Burn - amountJoined - balanceJoined";
 				]
 
-let tupper = Bound.Log.log_time "Rewrite joined no worse" (Bound.Rewriter.rewrite ~sat:4 (withdrawSplit @ withdrawJoined)
-						  (List.map from_string ["x"; "supply0"; "balance0"])
+let tupper = Bound.Log.log_time "Rewrite joined no worse" (Bound.Rewriter.rewrite ~sat:3 (withdrawSplit @ withdrawJoined)
+						  (List.map from_string ["x"; "supply0"; "balance0"; "liquidFunds"])
 						  vars_to_keep)
    						  (from_string "balanceSplit - balanceJoined")
