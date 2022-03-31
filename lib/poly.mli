@@ -119,6 +119,8 @@ module type Ideal = sig
 
     val equal : ideal -> ideal -> bool
 
+    val add_eqs : ideal -> poly list -> ideal
+
 end
 
 (** An ideal of polynomial generators p_1, ..., p_n, is the set of polynomials f such that f = a_1p_1 + ... + a_np_n

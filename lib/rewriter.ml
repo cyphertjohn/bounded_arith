@@ -285,6 +285,7 @@ let update_map ideal term_map t_p eqs ineqs =
   let bindings = fst (List.split (S.bindings reduced_map)) in
   let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
   let pairs = get_pairs bindings in
+  let ideal = I.add_eqs ideal (List.map (fun (v, pc) -> P.add (P.from_var v) (P.negate pc)) const_subs) in
   let rec aux rm_pairs (old_eqs, old_ineqs, old_tp, old_map) =
     match rm_pairs with
     | [] -> (old_eqs, old_ineqs, old_tp, old_map)

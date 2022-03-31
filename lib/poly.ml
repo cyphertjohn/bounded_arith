@@ -102,6 +102,8 @@ module type Ideal = sig
 
     val equal : ideal -> ideal -> bool
 
+    val add_eqs : ideal -> poly list -> ideal
+
 end
 
 module Ideal (C : Sigs.Coefficient) = struct
