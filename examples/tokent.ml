@@ -18,12 +18,13 @@ let withdrawSplit = List.map from_string [
 				] 
 let withdrawJoined = List.map from_string [
 					"floor((x * 2) * liquidFunds / supply0) - amountJoined";
-					"balance0 - (x * 2) - balance1Burn";
+					"balance0 - (x * 2) - balanceJoinedBurn";
 					(* "supply0 - (x * 2) - supply1"; *)
-					"balance1Burn - amountJoined - balanceJoined";
+					"balanceJoinedBurn - amountJoined - balanceJoined";
 				]
 
 let tupper = Bound.Log.log_time "Rewrite joined no worse" (Bound.Rewriter.rewrite ~sat:3 (withdrawSplit @ withdrawJoined)
 						  (List.map from_string ["x"; "supply0"; "balance0"; "liquidFunds"])
 						  vars_to_keep)
    						  (from_string "balanceSplit - balanceJoined")
+   						  (* (from_string "balanceJoined - balanceSplit") *)
