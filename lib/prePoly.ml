@@ -1,17 +1,44 @@
 
-module MakeMon (C : Sigs.Coefficient) = struct
+module MakeMon (C : Sigs.Coefficient) (V : Sigs.Var) = struct
 
-  include C
+  type var = V.t
 
-  type monic_mon = (string * int) list
+  type varset = V.S.set
 
-  type mon = coef * monic_mon
+  type pre_monic = (V.t * int) list
 
-  let zero_mon = []
+  let pre_monic_to_deg_map : pre_monic -> V.Mi.map = List.fold_left (fun degmap (v, d) -> V.Mi.add v d degmap) (V.Mi.empty)
 
-  let make_mon_from_coef c = (c, zero_mon)
+  let mon_to_dim = BatHashtbl.create 100
+  let dim_to_mon = BatHashtbl.create 100
 
-  let make_mon_from_var s i : mon = (from_string_c "1", [(s, i)])
+  let curr_mon = ref 0
+
+  let get_dim (m : pre_monic) = 
+    try BatHashtbl.find mon_to_dim m
+    with Not_found ->
+      BatHashtbl.add mon_to_dim m !curr_mon;
+      BatHashtbl.add dim_to_mon !curr_mon (m, pre_monic_to_deg_map m);
+      curr_mon := !curr_mon + 1;
+      !curr_mon - 1
+
+  let get_mon dim : pre_monic = 
+    try fst (BatHashtbl.find dim_to_mon dim)
+    with Not_found -> failwith "Dim with no corresponding mon"
+
+  type monic_mon = int
+
+  type mon = C.coef * monic_mon
+
+  let mon_to_id (m : monic_mon) : int = m
+
+  let id_to_mon (m : int) : monic_mon = m
+
+  let zero_mon = get_dim []
+
+  let make_mon_from_coef (c : C.coef) : mon = (c, zero_mon)
+
+  let make_mon_from_var s i : mon = (C.from_string_c "1", get_dim [(s, i)])
 
   let mon_from_coef c = (C.from_string_c c, zero_mon)
 
@@ -21,21 +48,22 @@ module MakeMon (C : Sigs.Coefficient) = struct
         (v, e) :: acc
       else acc
     in
-    let monic = List.sort (fun (av, _) (bv, _)-> compare av bv)(List.fold_left2 folder [] vars elist) in
-    C.of_zarith c, monic
+    let monic = List.fold_left2 folder [] vars elist in
+    let monic = List.sort (fun (av, _) (bv, _)-> V.compare av bv) monic in
+    C.of_zarith c, (get_dim monic)
 
-  let zero = mon_from_coef "0"
+  let zero = make_mon_from_coef (C.zero)
 
   let minus_1 = mon_from_coef "-1"
 
-  let is_zero (c, m) = 
+  let is_zero ((c, m) : mon) = 
     if C.is_zero c then
-      if m = [] then true
+      if m = zero_mon then true
       else failwith "Monomial has zero coefficient but is not empty"
     else false
 
-  let is_one (c, m) =
-    if C.is_one c && m = [] then true
+  let is_one ((c, m) : mon) =
+    if C.is_one c && m = zero_mon then true
     else false
   
   (*let get_monic_mon (N (_, mon)) = mon
@@ -54,8 +82,8 @@ module MakeMon (C : Sigs.Coefficient) = struct
       else None*)
     
 
-  let mult_mon (a : mon) (b : mon) : mon = 
-    let new_coef = C.mulc (fst a) (fst b) in
+  let mult_mon ((ac, am) : mon) ((bc, bm) : mon) : mon = 
+    let new_coef = C.mulc ac bc in
     if (C.is_zero new_coef) then zero
     else 
       let rec zip acc am bm = 
@@ -71,29 +99,26 @@ module MakeMon (C : Sigs.Coefficient) = struct
           else
             zip ((bv, be) :: acc) am b_rest
         in
-      (new_coef, zip [] (snd a) (snd b))
+      (new_coef, (get_dim (zip [] (get_mon am) (get_mon bm))))
   
-  let divide_mon (a : mon) (b : mon) : mon option = 
-    let b_coef = fst b in
-    if C.is_zero b_coef then failwith "Divide by 0";
-    let new_coef = C.divc (fst a) (fst b) in
-    let blist = snd b in
-    let alist = snd a in
-    let rec var_divide rema remb acc =
+  let divide_mon ((ac, am) : mon) ((bc, bm) : mon) : mon option = 
+    if C.is_zero bc then failwith "Divide by 0";
+    let new_coef = C.divc ac bc in
+    let rec var_divide rema remb (acc) =
       match (rema, remb) with
       | [], [] -> Some (List.rev acc)
       | [], _ :: _ -> None
       | _, [] -> Some ((List.rev acc) @ rema)
       | (av, ae) :: remas, (bv, be) :: rembs ->
-        if av = bv && ae = be then var_divide remas rembs acc
+        if av = bv && ae = be then var_divide remas rembs (acc)
         else if av = bv && ae > be then var_divide remas rembs (((av, ae - be)) :: acc)
         else if av = bv && ae < be then None
         else if av < bv then var_divide remas remb (((av, ae)) :: acc)
         else None
     in
-    match (var_divide alist blist []) with
+    match (var_divide (get_mon am) (get_mon bm) []) with
     | None -> None
-    | Some new_mon -> Some (new_coef, new_mon)
+    | Some new_mon -> Some (new_coef, get_dim new_mon)
   
   let lcm_of_mon (a : monic_mon) (b : monic_mon) : monic_mon = 
     let rec aux x y acc =
@@ -105,48 +130,50 @@ module MakeMon (C : Sigs.Coefficient) = struct
         else if xvar < yvar then (xvar, e1) :: (aux xs y acc)
         else (yvar, e2) :: (aux ys x acc)
     in
-    (aux a b [])
+    get_dim (aux (get_mon a) (get_mon b) [])
 
-  let degree v (m : monic_mon) = 
-    match List.find_opt (fun (var, _) -> v = var) m with
-    | Some (_, d) -> d
-    | None -> 0
+  let degree v (m : monic_mon) : int = 
+    try V.Mi.find v (snd (BatHashtbl.find dim_to_mon m))
+    with Not_found -> 0
 
   let get_vars (m : monic_mon) = 
-    BatList.enum (List.map fst m)
+    V.Mi.domain (snd (BatHashtbl.find dim_to_mon m))
 
   let monic_mon_to_string (m : monic_mon) = 
     let folder acc (v, e) = 
-      if e > 1 then (v ^ "^" ^ (string_of_int e)) :: acc
-      else v :: acc
+      if e > 1 then ((V.to_string v) ^ "^" ^ (string_of_int e)) :: acc
+      else (V.to_string v) :: acc
     in
-    String.concat "" (List.rev (List.fold_left folder [] m))
+    String.concat "" (List.rev (List.fold_left folder [] (get_mon m)))
 
-  let mon_to_string (c, m) =
+  let is_const ((_, m) : mon) = m = zero_mon
+
+  let mon_to_string ((c, m) : mon) =
     let is_neg, norm_c = 
-      if cmp c (from_string_c "0") < 0 then true, (mulc c (from_string_c "-1"))
+      if C.cmp c C.zero < 0 then true, (C.mulc c (C.from_string_c "-1"))
       else false, c
     in
-    if m = [] then is_neg, to_string_c norm_c
+    if is_const (c, m) then is_neg, C.to_string_c norm_c
     else if C.is_one norm_c then is_neg, (monic_mon_to_string m)
-    else is_neg, (to_string_c norm_c) ^ (monic_mon_to_string m)
+    else is_neg, (C.to_string_c norm_c) ^ (monic_mon_to_string m)
 
-  let is_const ((_, m) : mon) = m = []
-
-  let rec lex_ord a b = 
-    match (a, b) with
-    | ([], []) -> 0
-    | ([], _ :: _) -> -1
-    | (_ :: _, []) -> 1
-    | ((xv, xe) :: xs, (yv, ye) :: ys) -> 
-      if xv = yv then 
-        if compare xe ye = 0 then lex_ord xs ys
-        else compare xe ye
-      else if xv < yv then 1
-      else (-1)
+  let lex_ord (m1 : monic_mon) (m2 : monic_mon) : int = 
+    let rec aux a b = 
+      match (a, b) with
+      | ([], []) -> 0
+      | ([], _ :: _) -> -1
+      | (_ :: _, []) -> 1
+      | ((xv, xe) :: xs, (yv, ye) :: ys) -> 
+        if V.equal xv yv then 
+          if compare xe ye = 0 then aux xs ys
+          else compare xe ye
+        else if V.compare xv yv < 0 then 1
+        else (-1)
+    in
+    aux (get_mon m1) (get_mon m2)
 
   let total_deg (m : monic_mon) = 
-    List.fold_left (fun acc (_, e) -> e + acc) 0 m
+    List.fold_left (fun acc (_, e) -> e + acc) 0 (get_mon m)
 
 
   let grlex_ord (a : monic_mon) (b : monic_mon) = 
@@ -157,86 +184,95 @@ module MakeMon (C : Sigs.Coefficient) = struct
 
   let ord = ref lex_ord
 
-  let mon_ord (c1, m1) (c2, m2) = 
+  let mon_ord ((c1, m1) : mon) ((c2, m2) : mon) = 
     let order = !ord m1 m2 in
     if order = 0 then C.cmp c1 c2 else order
 
   let eval_monic eval_list (mon : monic_mon) = 
-    if mon = [] then from_string_c "0"
+    if mon = zero_mon  then C.zero
     else
-      let eval_list_s = List.sort (fun (av, _) (bv, _) -> compare av bv) eval_list in
+      let eval_list_s = List.sort (fun (av, _) (bv, _) -> V.compare av bv) eval_list in
       let rec aux res elist monlist = 
         match elist, monlist with
         | [], [] -> res
         | _, [] -> res
-        | [], (v, _) :: _ -> failwith ("No evaluation for " ^ v)
+        | [], (v, _) :: _ -> failwith ("No evaluation for " ^ (V.to_string v))
         | (evar, eval) :: erest, (mv, me) :: mrest ->
           if compare evar mv < 0 then aux res erest monlist
-          else if compare evar mv > 0 then failwith ("No evaluation for " ^ mv)
-          else aux (mulc res (C.exp eval me)) erest mrest
+          else if compare evar mv > 0 then failwith ("No evaluation for " ^ (V.to_string mv))
+          else aux (C.mulc res (C.exp eval me)) erest mrest
       in
-      aux (from_string_c "1") eval_list_s mon
+      aux C.one eval_list_s (get_mon mon)
   
 end
-module MakeP (M : sig
-              include Sigs.Coefficient
-              type monic_mon
-              type mon = coef * monic_mon
-              val make_mon_from_faugere_mon : string list -> Z.t * (int list) -> mon
-              val make_mon_from_coef : coef -> mon
-              val make_mon_from_var : string -> int -> mon
-              val is_zero : mon -> bool
-              val is_one : mon -> bool
-              val zero : mon
-              val ord : (monic_mon -> monic_mon -> int) ref
-              val minus_1 : mon
-              (*val add_mon : mon -> mon -> mon option*)
-              val mult_mon : mon -> mon -> mon
-              val divide_mon : mon -> mon -> mon option
-              val lcm_of_mon : monic_mon -> monic_mon -> monic_mon
-              val degree : string -> monic_mon -> int
-              val total_deg : monic_mon -> int
-              val get_vars : monic_mon -> string BatEnum.t
-              val mon_to_string : mon -> bool * string
-              val is_const : mon -> bool
-              val lex_ord : monic_mon -> monic_mon -> int
-              val grlex_ord : monic_mon -> monic_mon -> int
-              val eval_monic : (string * coef) list -> monic_mon -> coef
-            end ) = struct
 
-  let set_ord order = M.ord := order
+module Make ( Co : Sigs.Coefficient) ( Va : Sigs.Var) = struct
 
-  module Mon = M
+  module C = Co
 
-  type poly = (M.monic_mon, M.coef) BatHashtbl.t
+  module V = Va
+
+  module M = MakeMon(C)(V)
+
+  type monic_mon = M.monic_mon
+
+  type mon = M.mon
+
+  type poly = {
+    mons : (M.monic_mon, C.coef) BatHashtbl.t;
+    mutable vars : V.S.set option
+  }
+  
+  let divide_mon = M.divide_mon
+
+  let mult_mon = M.mult_mon
+
+  let zero_mon = M.zero
+
+  let lcm_of_mon = M.lcm_of_mon
+
+  let id_to_mon = M.id_to_mon
+
+  let mon_to_id = M.mon_to_id
 
   let make_poly_from_mon (m : M.mon) : poly = 
-    if M.is_zero m then BatHashtbl.create 20
+    if M.is_zero m then {mons = BatHashtbl.create 20; vars = Some V.S.empty}
     else
       let coefs = BatHashtbl.create 20 in
       BatHashtbl.add coefs (snd m) (fst m);
-      coefs
+      {mons = coefs; vars = Some (M.get_vars (snd m))}
+
+  let make_mon_from_coef = M.make_mon_from_coef
+
+  let make_mon_from_var = M.make_mon_from_var
+
+  let make_mon_from_faugere_mon = M.make_mon_from_faugere_mon
 
   let from_var s : poly = make_poly_from_mon (M.make_mon_from_var s 1)
 
+  let from_var_s s : poly = from_var (V.of_string s)
+
   let from_const c : poly = make_poly_from_mon (M.make_mon_from_coef c)
 
-  let from_const_s s = from_const (M.from_string_c s)
+  let from_const_s s = from_const (C.from_string_c s)
 
   let from_var_pow s e : poly = make_poly_from_mon (M.make_mon_from_var s e)
 
-  let negate (mons : poly) = 
-    BatHashtbl.map (fun _ c -> M.mulc c (M.from_string_c "-1")) mons
+  let from_var_s_pow s e : poly = from_var_pow (V.of_string s) e
 
-  let get_degree = M.degree
+  let negate (p : poly) : poly = 
+    {p with mons = BatHashtbl.map (fun _ c -> C.mulc c (C.from_string_c "-1")) p.mons}
 
-  let get_vars_m = M.get_vars
+  let get_degree : V.t -> M.monic_mon -> int = M.degree
 
-  let get_mons (mons : poly) : M.mon BatEnum.t = BatEnum.map (fun (a, b) -> (b, a)) (BatHashtbl.enum mons)
+  let get_vars_m : monic_mon -> V.S.set = M.get_vars
 
-  let get_vars (mons : poly) = 
-    let with_dups = BatEnum.concat (BatEnum.map (fun (m, _) -> M.get_vars m) (BatHashtbl.enum mons)) in
-    BatEnum.uniq with_dups
+  let get_mons (p : poly) : M.mon list = (List.map (fun (b, a) -> (a, b)) (BatHashtbl.to_list p.mons))
+
+  let get_vars (p : poly) = 
+    match p.vars with
+    | Some vset -> vset
+    | None -> List.fold_left (fun acc (_, m) -> V.S.union (M.get_vars m) acc) V.S.empty (get_mons p)
   
   (*let collect_terms (mons : poly) : poly = 
     let collected_terms = BatEnum.group_by (fun x y -> !M.ord (snd x) (snd y) = 0) mons in
@@ -256,7 +292,7 @@ module MakeP (M : sig
 
   let mon_order (ac, am) (bc, bm) = 
     let mon_cmp = !M.ord am bm in
-    if mon_cmp = 0 then M.cmp ac bc
+    if mon_cmp = 0 then C.cmp ac bc
     else mon_cmp
 
   (*let normalize poly = 
@@ -266,12 +302,13 @@ module MakeP (M : sig
     {coefs; monics}*)
 
   let from_mon_list (l : M.mon list) : poly = 
-    let folder acc (c, m) = 
+    let folder (acc, accset) (c, m) = 
+      let vset = M.get_vars m in
       BatHashtbl.add acc m c;
-      acc
+      (acc, V.S.union accset vset)
     in
-    let coefs = List.fold_left folder (BatHashtbl.create 20) l in
-    coefs
+    let coefs, vset = List.fold_left folder (BatHashtbl.create 20, V.S.empty) l in
+    {mons = coefs; vars = Some vset}
 
   (*let lt (mons : poly) = 
     match Base.Avltree.first mons.monics with
@@ -290,7 +327,7 @@ module MakeP (M : sig
     else mons*)
   
   let to_string (p : poly) = 
-    if BatHashtbl.is_empty p then "0"
+    if BatHashtbl.is_empty p.mons then "0"
     else
       let folder (acc, first) (is_neg, m_s) =
         if first && is_neg then "-" ^ m_s, false
@@ -298,7 +335,7 @@ module MakeP (M : sig
         else if is_neg then acc ^ " - " ^ m_s, false
         else acc ^ " + " ^ m_s, false
       in
-      let mon_list = List.rev (List.sort mon_order (List.map (fun (a, b) -> (b, a)) (BatHashtbl.to_list p))) in
+      let mon_list = List.rev (List.sort mon_order (get_mons p)) in
       fst (List.fold_left folder ("", true) (List.map M.mon_to_string mon_list))
 
   let ppm f m = 
@@ -308,13 +345,13 @@ module MakeP (M : sig
     in
     Format.pp_open_hbox f (); Format.pp_print_string f str; Format.pp_close_box f ()
 
-  let ppmm f mm = Format.pp_open_hbox f (); Format.pp_print_string f (snd (M.mon_to_string (M.from_string_c "1", mm))); Format.pp_close_box f ()
+  let ppmm f mm = Format.pp_open_hbox f (); Format.pp_print_string f (snd (M.mon_to_string (C.from_string_c "1", mm))); Format.pp_close_box f ()
 
-  let pp ?(ord = !M.ord) f p = 
-    if BatHashtbl.is_empty p then (Format.pp_open_hbox f (); Format.pp_print_string f "0"; Format.pp_close_box f ())
+  let pp ?(ord = !M.ord) f (p : poly) = 
+    if BatHashtbl.is_empty p.mons then (Format.pp_open_hbox f (); Format.pp_print_string f "0"; Format.pp_close_box f ())
     else
       (
-      let mon_list = List.rev (List.map (fun (b, a) -> (a, b)) (List.sort (fun a b -> ord (fst a) (fst b)) (BatHashtbl.to_list p))) in
+      let mon_list = List.rev (List.sort (fun a b -> ord (snd a) (snd b)) (get_mons p)) in
       Format.pp_open_box f 0;
       let first_mon = List.hd mon_list in
       let is_fm_neg, fm_str = M.mon_to_string first_mon in
@@ -331,74 +368,91 @@ module MakeP (M : sig
       )
 
   let is_zero (p : poly) = 
-    if BatHashtbl.length p = 0 then true
+    if BatHashtbl.length p.mons = 0 then true
     else
       let mons = get_mons p in
-      BatEnum.for_all M.is_zero mons
+      List.for_all M.is_zero mons
 
   let is_one (p : poly) = 
-    if BatHashtbl.length p = 0 then false
+    if BatHashtbl.length p.mons = 0 then false
     else
-      BatEnum.for_all M.is_one (get_mons p)
+      List.for_all M.is_one (get_mons p)
 
   let is_const (p : poly) = 
-    if BatHashtbl.length p = 0 then Some (M.from_string_c "0")
+    if BatHashtbl.length p.mons = 0 then Some (C.zero)
     else
       let mons = get_mons p in
       let folder const (c, mon) = 
         if M.is_const (c, mon) then 
           match const with
           | None -> None
-          | Some c2 -> Some (M.addc c c2)
+          | Some c2 -> Some (C.addc c c2)
         else None
       in
-      BatEnum.fold folder (Some (M.from_string_c "0")) mons
+      List.fold_left folder (Some (C.zero)) mons
 
   let add_mon (p : poly) ((c1, m) : M.mon)  =
-    BatHashtbl.modify_def (M.from_string_c "0") m (fun c2 -> M.addc c1 c2) p;
-    if M.cmp (BatHashtbl.find p m) (M.from_string_c "0") = 0 then BatHashtbl.remove p m
+    BatHashtbl.modify_def (C.zero) m (fun c2 -> C.addc c1 c2) p.mons;
+    if C.cmp (BatHashtbl.find p.mons m) (C.zero) = 0 then BatHashtbl.remove p.mons m; p.vars <- None
 
-  let subtract_mon (p : poly) ((c1, m) : M.mon)  =
-    BatHashtbl.modify_def (M.from_string_c "0") m (fun c2 -> M.addc c1 (M.mulc (M.from_string_c "-1") c2)) p;
-    if M.cmp (BatHashtbl.find p m) (M.from_string_c "0") = 0 then BatHashtbl.remove p m
+  let subtract_mon (p : poly) ((c1, m) : M.mon) =
+    BatHashtbl.modify_def (C.zero) m (fun c2 -> C.addc c2 (C.mulc (C.from_string_c "-1") c1)) p.mons;
+    if C.cmp (BatHashtbl.find p.mons m) (C.zero) = 0 then BatHashtbl.remove p.mons m; p.vars <- None
 
   let addi (p1 : poly) (p2 : poly) = 
     let iterator m2 c2 = 
       add_mon p1 (c2, m2)
     in
-    BatHashtbl.iter iterator p2
+    BatHashtbl.iter iterator p2.mons
 
   let add (p1 : poly) (p2 : poly) : poly = 
-    let p1c = BatHashtbl.copy p1 in
+    let p1c = {mons = BatHashtbl.copy p1.mons; vars = p1.vars} in
     addi p1c p2;
     p1c
         
+  let subtracti (p1 : poly) (p2 : poly) = 
+    let iterator m2 c2 = 
+      subtract_mon p1 (c2, m2)
+    in
+    BatHashtbl.iter iterator p2.mons;
+    p1.vars <- None
+
+  let subtract (p1 : poly) (p2 : poly) : poly =
+    let p1c = {mons = BatHashtbl.copy p1.mons; vars = p1.vars} in
+    subtracti p1c p2;
+    p1c
+  
   let mult_mon_poly mon (p : poly) : poly = 
-    if M.is_zero mon then BatHashtbl.create 20
+    if M.is_zero mon then {mons = BatHashtbl.create 20; vars = Some (V.S.empty)}
     else 
-      let p_enum = BatHashtbl.enum p in
+      let p_enum = BatHashtbl.enum p.mons in
       let new_enums = BatEnum.map
         (fun (m, c) -> 
           let new_c, new_m = M.mult_mon mon (c, m) in
           new_m, new_c
         ) p_enum in
-      BatHashtbl.of_enum new_enums
+      match p.vars with
+      | None -> {mons = BatHashtbl.of_enum new_enums; vars = None}
+      | Some vset -> {mons = BatHashtbl.of_enum new_enums; vars = Some (V.S.union (M.get_vars (snd mon)) vset)}
 
 
   (*let mult_n (N (Sum p1)) (N (Sum p2)) = 
     let folder acc p2_mon = 
       add_n acc (N (Sum (List.map (fun x -> M.mult_mon p2_mon x) p1)))
     in
-    List.fold_left folder (N (Sum[Coef (M.from_string_c "0"), Prod[]])) p2*)
+    List.fold_left folder (N (Sum[Coef (C.zero), Prod[]])) p2*)
 
 
   let mul (p1 : poly) (p2 : poly) : poly = 
-    let acc = BatHashtbl.create ((BatHashtbl.length p1) * (BatHashtbl.length p2)) in
+    let acc = match p1.vars, p2.vars with
+              | Some p1vs, Some p2vs -> {mons = BatHashtbl.create ((BatHashtbl.length p1.mons) * (BatHashtbl.length p2.mons)); vars = Some (V.S.union p1vs p2vs)}
+              | _ -> {mons = BatHashtbl.create ((BatHashtbl.length p1.mons) * (BatHashtbl.length p2.mons)); vars = None}
+    in
     let iterator p2_mon p2_c = 
       let monprod = mult_mon_poly (p2_c, p2_mon) p1 in
       addi acc monprod;
     in
-    BatHashtbl.iter iterator p2;
+    BatHashtbl.iter iterator p2.mons;
     acc
 
 
@@ -419,45 +473,120 @@ module MakeP (M : sig
       | None -> failwith "Impossible"
       
 
-  let substitute (var, p1) (p2 : poly) =
-    let acc = BatHashtbl.create 20 in 
+  let substitute (var, p1) (p2 : poly) : poly =
+    let acc = match p1.vars, p2.vars with 
+              | Some p1vs, Some p2vs when V.S.mem var p2vs -> {mons = BatHashtbl.create 20; vars = Some (V.S.union (V.S.diff p2vs (V.S.add var V.S.empty)) p1vs)}
+              | _ -> {mons = BatHashtbl.create 20; vars = None}
+    in
     let iterator p2m p2c = 
       let new_p = substitute_mon (var, p1) (p2c, p2m) in
       addi acc new_p
     in
-    BatHashtbl.iter iterator p2;
+    BatHashtbl.iter iterator p2.mons;
     acc
     
 
   let compare p1 p2 = 
-    let p1s = List.sort mon_order (List.map (fun (a, b) -> (b, a)) (BatHashtbl.to_list p1)) in
-    let p2s = List.sort mon_order (List.map (fun (a, b) -> (b, a)) (BatHashtbl.to_list p2)) in
+    let p1s = List.sort mon_order (get_mons p1) in
+    let p2s = List.sort mon_order (get_mons p2) in
     BatEnum.compare mon_order (BatList.enum p1s) (BatList.enum p2s)
 
-  let equal (p1 : poly) (p2 : poly) = 
-    if BatHashtbl.length p1 = BatHashtbl.length p2 then 
-      let rec aux curr_p2 = 
-        match BatEnum.get curr_p2 with
-        | None -> true
-        | Some (m, c2) ->
-          match BatHashtbl.find_option p1 m with
-          | None -> false
-          | Some c1 ->
-            if M.cmp c1 c2 = 0 then aux curr_p2
-            else false
-      in
-      aux (BatHashtbl.enum p2)
-    else false
-
-
-  let subtract p1_n p2_n = 
-    let neg_p2_n = mult_mon_poly M.minus_1 p2_n in
-    addi p1_n neg_p2_n
+  let equal (p1 : poly) (p2 : poly) = is_zero (subtract p1 p2)
   
   let lex_ord = M.lex_ord
 
   let grlex_ord = M.grlex_ord
 
-end
+  type sorted_poly = poly * M.monic_mon list
 
-module Make ( C : Sigs.Coefficient) = MakeP(MakeMon(C))
+  let make_sorted_poly (ord : M.monic_mon -> M.monic_mon -> int) p : sorted_poly = 
+    let monics = List.map snd (get_mons p) in
+    let sorted_monics = List.rev (List.sort ord monics) in
+    (p, sorted_monics)
+
+  let lt ((p, mons) : sorted_poly) = 
+    if List.length mons = 0 then M.zero
+    else 
+      match BatHashtbl.find_option p.mons (List.hd mons) with
+      | Some c -> c, List.hd mons
+      | None ->
+        failwith "Found a mon not in tbl"
+
+  let lc p = fst (lt p)
+
+  let get_poly = fst
+
+  let division ord divisors f =
+    let find_map func lis = 
+      let rec foo l i =
+        match l with
+        | [] -> None
+        | x :: xs ->
+          match func x with 
+          | None -> foo xs (i+1)
+          | Some y -> Some (y, i)
+      in
+      foo lis 0
+    in
+    let reduction_occurred = ref false in
+    let rec aux p mults (r : sorted_poly) = 
+      if is_zero (fst p) then (mults, r)
+      else 
+        let ltp = lt p in
+        let ltdiv fi = divide_mon ltp (lt fi) in
+        match find_map ltdiv divisors with
+        | None ->
+          subtract_mon (fst p) ltp;
+          let new_pmons = List.tl (snd p) in
+          add_mon (fst r) ltp;
+          aux (fst p, new_pmons) mults (fst r, (snd r) @ [snd ltp])
+        | Some (new_mon, i) ->
+          reduction_occurred := true;
+          subtracti (fst p) (mult_mon_poly new_mon (fst (List.nth divisors i)));
+          List.iteri (fun j x -> if j = i then add_mon x new_mon) mults;
+          aux (make_sorted_poly ord (fst p)) mults r
+    in
+    (!reduction_occurred, aux f (List.map (fun _ -> (make_poly_from_mon M.zero)) divisors) ((make_poly_from_mon M.zero), []))
+
+  let make_monic ((p, ml) : sorted_poly) : sorted_poly = 
+    let lc = lc (p, ml) in
+    BatHashtbl.map_inplace (fun _ c -> C.divc c lc) p.mons;
+    p, ml
+
+
+  let compare_sorted (ord : monic_mon -> monic_mon -> int) ((p1, mon_list1) : sorted_poly) ((p2, mon_list2) : sorted_poly)= 
+    let rec aux ml1 ml2 = 
+      match ml1, ml2 with
+      | [], [] -> 0
+      | [], _ -> -1
+      | _, [] -> 1
+      | m1 :: m1s, m2 :: m2s ->
+        let cmp_res = ord m1 m2 in
+        if cmp_res <> 0 then cmp_res
+        else
+          let m1c, m2c = BatHashtbl.find p1.mons m1, BatHashtbl.find p2.mons m2 in
+          let coef_cmp = C.cmp m1c m2c in
+          if coef_cmp <> 0 then coef_cmp
+          else aux m1s m2s
+    in
+    aux mon_list1 mon_list2
+  
+  let equal_sorted_sets b1 b2 = 
+    let b1ss, b2ss = List.sort (compare_sorted lex_ord) b1, List.sort (compare_sorted lex_ord) b2 in
+    let rec eq (p1, p1l) (p2, p2l) = 
+      match p1l, p2l with
+      | [], [] -> true
+      | [], _ -> false
+      | _, [] -> false
+      | p1m :: p1ls, p2m :: p2ls ->
+        if p1m = p2m then 
+          let p1c, p2c = BatHashtbl.find p1.mons p1m, BatHashtbl.find p2.mons p2m in
+          let coef_cmp = C.cmp p1c p2c in
+          if coef_cmp <> 0 then false
+          else eq (p1, p1ls) (p2, p2ls)
+        else false
+    in
+    let eqs = List.map2 eq b1ss b2ss in
+    List.for_all (fun x -> x) eqs
+
+end

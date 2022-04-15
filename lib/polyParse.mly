@@ -1,9 +1,9 @@
 /* File parser.mly */
         %parameter<P : sig
           type poly
-          val from_var : string -> poly
+          val from_var_s : string -> poly
           val from_const_s : string -> poly
-          val from_var_pow : string -> int -> poly
+          val from_var_s_pow : string -> int -> poly
           val negate : poly -> poly
           val mul : poly -> poly -> poly
           val add : poly -> poly -> poly
@@ -42,6 +42,6 @@
           | var_power                       { $1 }
         ;
         var_power:
-            VAR POWER INT                   { P.from_var_pow $1 (int_of_string $3) }
-          | VAR                             { P.from_var $1 } 
+            VAR POWER INT                   { P.from_var_s_pow $1 (int_of_string $3) }
+          | VAR                             { P.from_var_s $1 } 
         ;
