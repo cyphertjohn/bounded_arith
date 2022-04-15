@@ -144,7 +144,9 @@ module V : Var = struct
     
   let to_string v = 
     if BatISet.mem v !dummy_vars then "x" ^ (string_of_int v)
-    else BatHashtbl.find int_to_string v
+    else 
+      try BatHashtbl.find int_to_string v
+      with Not_found -> failwith "Can't find " ^ (string_of_int v)
 
   let fresh_var () = 
     dummy_vars := BatISet.add !curr_num !dummy_vars;

@@ -92,9 +92,9 @@ module MakeMon (C : Sigs.Coefficient) (V : Sigs.Var) = struct
         | _ :: _ , [] -> (List.rev acc) @ am
         | [], _ :: _ -> (List.rev acc) @ bm
         | (av, ae) :: a_rest, (bv, be) :: b_rest ->
-          if av = bv then
+          if V.equal av bv then
             zip ((av, ae + be) :: acc) a_rest b_rest
-          else if av < bv then
+          else if V.compare av bv < 0 then
             zip ((av, ae) :: acc) a_rest bm
           else
             zip ((bv, be) :: acc) am b_rest
@@ -110,10 +110,10 @@ module MakeMon (C : Sigs.Coefficient) (V : Sigs.Var) = struct
       | [], _ :: _ -> None
       | _, [] -> Some ((List.rev acc) @ rema)
       | (av, ae) :: remas, (bv, be) :: rembs ->
-        if av = bv && ae = be then var_divide remas rembs (acc)
-        else if av = bv && ae > be then var_divide remas rembs (((av, ae - be)) :: acc)
-        else if av = bv && ae < be then None
-        else if av < bv then var_divide remas remb (((av, ae)) :: acc)
+        if V.equal av bv && ae = be then var_divide remas rembs (acc)
+        else if V.equal av bv && ae > be then var_divide remas rembs (((av, ae - be)) :: acc)
+        else if V.equal av bv && ae < be then None
+        else if V.compare av bv < 0 then var_divide remas remb (((av, ae)) :: acc)
         else None
     in
     match (var_divide (get_mon am) (get_mon bm) []) with
@@ -126,8 +126,8 @@ module MakeMon (C : Sigs.Coefficient) (V : Sigs.Var) = struct
       | ([], _) -> y @ acc
       | (_, []) -> x @ acc
       | ((xvar, e1) :: xs, (yvar, e2) :: ys) -> 
-        if xvar = yvar then (xvar, max e1 e2) :: (aux xs ys acc)
-        else if xvar < yvar then (xvar, e1) :: (aux xs y acc)
+        if V.equal xvar yvar then (xvar, max e1 e2) :: (aux xs ys acc)
+        else if V.compare xvar yvar < 0 then (xvar, e1) :: (aux xs y acc)
         else (yvar, e2) :: (aux ys x acc)
     in
     get_dim (aux (get_mon a) (get_mon b) [])

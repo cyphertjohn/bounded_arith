@@ -68,9 +68,8 @@ module Make(P : Poly.Polynomial) = struct
       | Var x -> 
         let xvar = V.of_string x in
         let keep = List.mem xvar c.vars_to_keep in
-        let topo = if List.mem xvar top_order then top_order else xvar :: top_order in
-        if keep || List.mem xvar removes then (from_var xvar, 1, keep, (topo, p_map, V.Mi.add xvar 1 d_map, S.add xvar keep k_map, removes))
-        else (from_var xvar, 1, keep, (topo, p_map, V.Mi.add xvar 1 d_map, S.add xvar keep k_map, xvar :: removes))
+        if keep || List.mem xvar removes then (from_var xvar, 1, keep, (top_order, p_map, V.Mi.add xvar 1 d_map, S.add xvar keep k_map, removes))
+        else (from_var xvar, 1, keep, (top_order, p_map, V.Mi.add xvar 1 d_map, S.add xvar keep k_map, xvar :: removes))
       | Add l ->
         let folder (sum, (top_o, pmap, dmap, kmap, rms)) ex = 
           let pure_ex, _, _, (top, m, d, k, r) = aux (top_o, pmap, dmap, kmap, rms) ex in
@@ -208,35 +207,35 @@ module Make(P : Poly.Polynomial) = struct
     else failwith ("Don't know how to evaluate " ^ func)
 
   let compute_deg_and_keep map vars_to_keep = 
-    let folder v _ (dmap, kmap, topo, leaf_vars) =
-      let rec process_var va dm km topo leafs =         
-        if V.Mi.mem va dm then (V.Mi.find va dm, S.find va km, dm, km, topo, leafs)
+    let folder v _ (dmap, kmap, topo) =
+      let rec process_var va dm km topo =         
+        if V.Mi.mem va dm then (V.Mi.find va dm, S.find va km, dm, km, topo)
         else if not (S.mem va map) then 
-          let keep = List.mem va vars_to_keep in (1, keep, V.Mi.add va 1 dm, S.add va keep km, topo, va :: leafs)
+          let keep = List.mem va vars_to_keep in (1, keep, V.Mi.add va 1 dm, S.add va keep km, topo)
         else
           let (_, p) = S.find va map in
-          let (pd, keep, new_dm, new_km, new_topo, new_leafs) = process_poly p dm km topo leafs in
-          (pd, keep, V.Mi.add va pd new_dm, S.add va keep new_km, va :: new_topo, new_leafs)
-      and process_mon mon dm km topo leafs = 
+          let (pd, keep, new_dm, new_km, new_topo) = process_poly p dm km topo in
+          (pd, keep, V.Mi.add va pd new_dm, S.add va keep new_km, va :: new_topo)
+      and process_mon mon dm km topo = 
         let mon_vars = get_vars_m mon in
-        let collect_vars va (deg, keep, dmacc, kmacc, topoacc, leafsacc) = 
-          let (vad, vak, vadm, vakm, vatopo, valeafs) = process_var va dmacc kmacc topoacc leafsacc in
-          (vad * (get_degree va mon) + deg, vak && keep, vadm, vakm, vatopo, valeafs)
+        let collect_vars va (deg, keep, dmacc, kmacc, topoacc) = 
+          let (vad, vak, vadm, vakm, vatopo) = process_var va dmacc kmacc topoacc in
+          (vad * (get_degree va mon) + deg, vak && keep, vadm, vakm, vatopo)
         in
-        V.S.fold collect_vars mon_vars (0, true, dm, km, topo, leafs)
-      and process_poly p dm km topo leafs = 
+        V.S.fold collect_vars mon_vars (0, true, dm, km, topo)
+      and process_poly p dm km topo = 
         let mons = List.map snd (get_mons p) in
-        let collect_mons (deg, keep, dmacc, kmacc, topoacc, leafsacc) m = 
-          let (mad, mak, madm, makm, matopo, maleafs) = process_mon m dmacc kmacc topoacc leafsacc in
-          (max deg mad, mak && keep, madm, makm, matopo, maleafs)
+        let collect_mons (deg, keep, dmacc, kmacc, topoacc) m = 
+          let (mad, mak, madm, makm, matopo) = process_mon m dmacc kmacc topoacc in
+          (max deg mad, mak && keep, madm, makm, matopo)
         in
-        List.fold_left collect_mons (0, true, dm, km, topo, leafs) mons
+        List.fold_left collect_mons (0, true, dm, km, topo) mons
       in
-      let (_, _, new_dm, new_km, new_topo, new_leafs) = process_var v dmap kmap topo leaf_vars in
-      (new_dm, new_km, new_topo, new_leafs)
+      let (_, _, new_dm, new_km, new_topo) = process_var v dmap kmap topo in
+      (new_dm, new_km, new_topo)
     in
-    let (dmap, kmap, topo, leafs) = S.fold folder map (V.Mi.empty, S.empty, [], []) in
-    (dmap, kmap, leafs @ (List.rev topo))
+    let (dmap, kmap, topo) = S.fold folder map (V.Mi.empty, S.empty, []) in
+    (dmap, kmap, List.rev topo)
       
 
   let reduce_modify p eliminated_vars processed_e_map ideal = 
@@ -324,16 +323,17 @@ module Make(P : Poly.Polynomial) = struct
           else newemap, var_to_remove :: vars_to_still_remove
         in
         let stable_emap, vars_still_to_remove = List.fold_left add_vars_to_remove (stable_emap, []) c.vars_to_remove in
-        let eliminated = S.merge 
-          (fun _ in_eliman in_stable_map -> 
-            match in_eliman, in_stable_map with
-            | Some x, None -> Some x
-            | None, None -> None
-            | _, Some y -> Some y
-            ) eliminated stable_emap in
+        let eliminated = V.S.fold (fun v stable_map -> snd (reduce_modify (from_var v) eliminated stable_map c.ideal)) (V.S.diff (S.domain eliminated) (S.domain stable_emap)) stable_emap in
         let new_generators = List.map (fun p -> reduce_only_map p eliminated) (I.get_generators c.ideal) in
         let new_d_map, new_k_map, top_ord = compute_deg_and_keep map c.vars_to_keep in
-        let new_d_map, new_k_map, top_ord = List.fold_left (fun (dm, km, top) v -> V.Mi.add v 1 dm, S.add v false km, v :: top) (new_d_map, new_k_map, top_ord) vars_still_to_remove in
+        let new_d_map, new_k_map = List.fold_left (fun (dm, km) v -> V.Mi.add v 1 dm, S.add v false km) (new_d_map, new_k_map) vars_still_to_remove in
+        let new_d_map, new_k_map = 
+          List.fold_left (fun (dm, km) v -> 
+            if not (S.mem v eliminated) && not (V.Mi.mem v dm) then V.Mi.add v 1 dm, S.add v true km
+            else dm, km) 
+            (new_d_map, new_k_map) 
+            c.vars_to_keep 
+        in
         let new_ideal =
           match I.get_implementation c.ideal with
           | `buch -> I.make_ideal (create_order (BatHashtbl.create 200) (effective_deg_ord new_d_map new_k_map (List.mapi (fun i v -> (i, v)) top_ord))) new_generators
@@ -347,8 +347,7 @@ module Make(P : Poly.Polynomial) = struct
             vars_to_remove = vars_still_to_remove;
             keep_map = new_k_map;
           } 
-        
-          in
+        in
         aux c.map c.ideal new_c
     in
     aux S.empty (I.make_ideal lex_ord []) cl
