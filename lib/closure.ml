@@ -248,31 +248,33 @@ module Make(P : Poly.Polynomial) = struct
             let vred, new_map = aux (S.find var eliminated_vars) semap in
             vred, S.modify_def vred var (fun _ -> vred) new_map
           else 
-            (I.reduce (from_var var) ideal, semap)
+            (fst (I.reduce (from_var var) ideal), semap)
         in
         (substitute (var, var_red) red, var_semap)
       in
       let (red, new_emap) = V.S.fold folder to_red_vars (to_red, stable_e_map) in
-      let ired = I.reduce red ideal in
+      let ired = fst (I.reduce red ideal) in
       (ired, new_emap)
     in
     aux p processed_e_map
 
   let reduce p cl = 
-    let rec aux to_red = 
+    let rec aux (to_red, red_occur) = 
       let to_red_vars = get_vars to_red in
-      let folder var red = 
-        let var_red = 
-          if S.mem var cl.eliminated_vars then aux (S.find var cl.eliminated_vars)
+      let folder var (red, red_occurd) = 
+        let var_red, has_redu = 
+          if S.mem var cl.eliminated_vars then aux (S.find var cl.eliminated_vars, true)
           else 
-            I.reduce (from_var var) cl.ideal
+            let rem, reduc_occu = I.reduce (from_var var) cl.ideal in
+            rem, reduc_occu || red_occurd
         in
-        substitute (var, var_red) red
+        substitute (var, var_red) red, has_redu
       in
-      let red = V.S.fold folder to_red_vars to_red in
-      I.reduce red cl.ideal
+      let red, red_hap = V.S.fold folder to_red_vars (to_red, red_occur) in
+      let i_red = I.reduce red cl.ideal in
+      fst i_red, (snd i_red) || red_hap
     in
-    aux p
+    aux (p, false)
 
   let reduce_only_map p eliminated_vars = 
     let rec aux to_red = 
@@ -397,11 +399,13 @@ module Make(P : Poly.Polynomial) = struct
         keep_map = km
       } in
     let closed = close cl in
-    let pure_exprs_red = List.map (fun p ->reduce p closed) pure_exprs in
+    let pure_exprs_red = List.map (fun p ->fst (reduce p closed)) pure_exprs in
     closed, pure_exprs_red
 
-  let add_eqs eqs cl = close {cl with ideal = I.add_eqs cl.ideal (List.map (fun p -> reduce p cl) eqs)}
+  let add_eqs eqs cl = close {cl with ideal = I.add_eqs cl.ideal (List.map (fun p -> fst (reduce p cl)) eqs)}
 
   let get_ord cl = I.get_ord cl.ideal
+
+  let get_generators cl = I.get_generators cl.ideal
 
 end

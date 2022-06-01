@@ -3,7 +3,7 @@
  (synopsis "A library for generating symbolic bounds")
  (public_name bound)
  (private_modules polyLexer polyParse expLexer expParse prePoly)
- (libraries zarith batteries faugere faugere.zarith z3)
+ (libraries zarith batteries faugere faugere.zarith z3 vpl-core)
  )
 
 
