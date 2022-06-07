@@ -24,7 +24,13 @@ let transferYAfterX = List.map from_string [
 				]
 
 let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:3 (transferX @ transferYAfterX @ [from_string "10^2 - E18"])
-						  (List.map from_string ["supply0"; (* "priceAtLastFee0"; *) "performanceFee"; "balance"; "x"; "E18"])
+						  (List.map from_string ["supply0 - 1" (* shares = supply == 0 ? amount : amount.mul(supply) / bal *); 
+						  						(* "priceAtLastFee0"; *) 
+						  						"performanceFee"; 
+						  						"balance"; 
+						  						"x"; 
+						  						(* "E18";  *)
+						  						"valueAtLastCollectionPriceY - balance" (* if (totalBalance <= valueAtLastCollectionPrice) return 0; *)])
 						  vars_to_keep)
    						  [(from_string "sharesX - sharesY");
 							from_string "sharesY - sharesX"]
