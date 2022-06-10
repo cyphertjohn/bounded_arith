@@ -38,16 +38,16 @@ let vars_to_keep = ["v"; "a"; "e"; "b"]
 
 let () = Bound.Log.log_times := true
 
-let ts = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~fgb:false [t1;t2;t3;t4;t5] 
+let ts = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:3 [t1;t2;t3;t4;t5] 
 						  [
 							from_string "v";
 						  	from_string "e";
   						  	from_string "a";
 						  ] 
 						  vars_to_keep)
-   						  [from_string "x - y" ; from_string "y-x"]
+   						  [from_string "x - y"]
 
-let tupper, tlower = List.hd ts, List.hd (List.tl ts)
+let tuppers, tlowers = List.hd ts
 
 
 

@@ -22,6 +22,6 @@
    (ctypes-foreign :build)
    (faugere :build)
    (faugere_zarith :build)
-   (vpl-core :build)
+   (apron :build)
  )
 )

@@ -34,6 +34,10 @@ module MakeMon (C : Sigs.Coefficient) (V : Sigs.Var) = struct
 
   let id_to_mon (m : int) : monic_mon = m
 
+  let fresh_dim () =
+    curr_mon := !curr_mon + 1;
+    !curr_mon - 1
+
   let zero_mon = get_dim []
 
   let make_mon_from_coef (c : C.coef) : mon = (c, zero_mon)
@@ -234,6 +238,8 @@ module Make ( Co : Sigs.Coefficient) ( Va : Sigs.Var) = struct
   let id_to_mon = M.id_to_mon
 
   let mon_to_id = M.mon_to_id
+
+  let fresh_dim : (unit -> int) = M.fresh_dim
 
   let make_poly_from_mon (m : M.mon) : poly = 
     if M.is_zero m then {mons = BatHashtbl.create 20; vars = Some V.S.empty}
