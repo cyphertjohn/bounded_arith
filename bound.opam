@@ -16,6 +16,7 @@ depends: [
   "ctypes-foreign" {build}
   "faugere" {build}
   "faugere_zarith" {build}
+  "apron" {build}
   "odoc" {with-doc}
 ]
 build: [

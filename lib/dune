@@ -7,8 +7,7 @@
     gmp
     camlidl
     apron apron.boxMPQ apron.octMPQ apron.polkaMPQ
-    zarith batteries faugere faugere.zarith z3
-    vpl-core)
+    zarith batteries faugere faugere.zarith z3)
  )
 
 

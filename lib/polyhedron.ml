@@ -69,11 +69,6 @@ module Make (C : Sigs.Coefficient) = struct
       DM.compare (C.cmp) am bm
     else ccmp
 
-  let lt_eq a b = 
-    if C.cmp (snd a) (snd b) <> 0 then false
-    else
-      DM.equal (fun a b -> C.cmp a b = 0) (fst a) (fst b)
-
   let lt_replace v replace t = 
     let res = 
       if not (DM.mem v (fst t)) then t
@@ -243,41 +238,6 @@ module Make (C : Sigs.Coefficient) = struct
 
   end
 
-  module B = struct
-
-    open Vpl__UserInterface.UncertifiedQ
-
-    type t = Vpl__UserInterface.UncertifiedQ.t
-
-    let bottom = bottom
-
-    let of_poly p = 
-      match p with
-      | Bot -> bottom
-      | Ne cnstrs ->
-        let map_to_vpl m = DM.fold (fun dim coef l -> (Q.neg (C.to_zarith coef), Vpl.Var.fromInt dim) :: l) m [] in
-        let vpl_eqs = List.map (fun (m, c) -> Vpl.Cstr.Rat.eq (map_to_vpl m) (C.to_zarith c)) (S.to_list cnstrs.eqs) in
-        let vpl_non_strict = List.map (fun (m, c) -> Vpl.Cstr.Rat.le (map_to_vpl m) (C.to_zarith c)) (S.to_list cnstrs.non_strict) in
-        let vpl_strict = List.map (fun (m, c) -> Vpl.Cstr.Rat.lt (map_to_vpl m) (C.to_zarith c)) (S.to_list cnstrs.strict) in
-        assume (of_cond (Cond.of_cstrs (vpl_eqs @ vpl_non_strict @ vpl_strict))) top
-
-    let to_poly p =
-      if is_bottom p then Bot
-      else
-        let add_vpl_cstr_to_p nep cstr =
-          let const = C.of_zarith_q (Vpl.Cstr.Rat.get_c cstr) in
-          let coef_map = List.fold_left (fun map (v, c) -> DM.add (Vpl.Var.toInt v) (C.mulc (C.of_zarith_q c) (C.from_string_c "-1")) map) (empty_m) (Vpl.Cstr.Rat.Vec.toList (Vpl.Cstr.Rat.get_v cstr)) in
-          match cstr.typ with
-          | Vpl.Cstr_type.Eq -> add_cnstr `eq nep (coef_map, const)
-          | Vpl.Cstr_type.Le -> add_cnstr `ge nep (coef_map, const)
-          | Vpl.Cstr_type.Lt -> add_cnstr `gt nep (coef_map, const)
-        in
-        List.fold_left add_vpl_cstr_to_p top_p (get_cstrs p)
-
-    let join = join
-
-  end
-
 
   (*let vpl_poly_to_poly p =
     if is_bottom p then Bot
@@ -327,8 +287,7 @@ module Make (C : Sigs.Coefficient) = struct
       if cnstrs = [] then Z3.Boolean.mk_true ctx
       else Z3.Boolean.mk_and ctx cnstrs
 
-  let negate_poly ctx polyhedron = Z3.Boolean.mk_not ctx (poly_to_z3 ctx polyhedron)
-      
+       
   (*let z3_atom_to_poly negate phi = 
     let rec z3_term_to_dim_map t = 
       if Z3.Expr.is_const t then
@@ -432,13 +391,15 @@ module Make (C : Sigs.Coefficient) = struct
   type vt = | MinusInf | Term of (C.coef DM.t * C.coef) | TermEp of (C.coef DM.t * C.coef)
 
 
-  let pp_cm f cm = 
+  (*let pp_cm f cm = 
     let cm_list = DM.fold (fun dim c l -> (("v" ^ (string_of_int dim)), C.to_string_c c) :: l) cm [] in
     let print_p fo (v, c) = 
       Format.pp_open_hbox fo (); Format.pp_print_string fo (v ^ " -> " ^ c); Format.pp_close_box fo ()
     in
     Format.pp_open_vbox f 0;
     Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) print_p f cm_list
+
+  *)
 
   let project_dim m polyhedron d = 
     (*Log.log_line_s ("Projecting " ^ ( string_of_int d) ^ ":"); Log.log ~level:`trace pp_52 (Some polyhedron);*)
@@ -634,14 +595,6 @@ module Make (C : Sigs.Coefficient) = struct
             BatSet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) new_seen_asts, new_consts
     in
     snd (aux form (BatSet.empty) (BatSet.empty))
-
-
-  let project_vars ctx form variables = 
-    let bound_vars = List.mapi (fun i _ -> Z3.Quantifier.mk_bound ctx i (Z3.Arithmetic.Real.mk_sort ctx)) variables in
-    let subst_form = Z3.Expr.substitute form (List.map (Z3.Arithmetic.Real.mk_const ctx) variables) bound_vars in
-    let quant = Z3.Quantifier.mk_exists ctx (List.map (fun _ -> Z3.Arithmetic.Real.mk_sort ctx) bound_vars) variables subst_form None [] [] None None in
-    Z3.Expr.simplify (Z3.Quantifier.expr_of_quantifier quant) None
-
 
   let convex_hull ctx solver project_dims =
     let form = Z3.Boolean.mk_and ctx (Z3.Solver.get_assertions solver) in
@@ -946,7 +899,7 @@ module Make (C : Sigs.Coefficient) = struct
     real_ups, real_lows, violated_bs
 
 
-  let pp_bounds is_lower t f bounds = 
+  (*let pp_bounds is_lower t f bounds = 
     let pp_print_bound fo b = 
       Format.pp_open_hbox fo ();
       if is_lower then (pp_l fo t; Format.pp_print_string fo " >= "; pp_l fo b)
@@ -955,7 +908,7 @@ module Make (C : Sigs.Coefficient) = struct
     in
     Format.pp_open_vbox f 4;
     Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) pp_print_bound f bounds;
-    Format.pp_close_box f ()
+    Format.pp_close_box f ()*)
 
 
   let optimize_t_by_project t fresh_dim dims_in_ord poly ctx solver =
