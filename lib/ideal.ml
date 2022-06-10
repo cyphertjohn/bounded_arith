@@ -311,8 +311,8 @@ module Make (P : Poly.Polynomial) = struct
     if new_eqs = [] then i
     else 
       match i.impl with
-      | Fgb _ (*(deg_map, keep_map, top_order)*) ->
-        (*make_ideal_f deg_map keep_map top_order ((get_generators i) @ new_eqs)*) failwith "TODO"
+      | Fgb (deg_map, keep_map, top_order) ->
+        make_ideal_f deg_map keep_map top_order ((get_generators i) @ new_eqs)
       | Buch ->
         match i.basis with
         | Top -> {basis = Top; ord = i.ord; impl = Buch}
