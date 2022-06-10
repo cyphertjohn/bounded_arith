@@ -18,8 +18,6 @@
    (z3 :build)
    (menhir :build)
    (batteries :build)
-   (ctypes :build)
-   (ctypes-foreign :build)
    (faugere :build)
    (faugere_zarith :build)
  )
