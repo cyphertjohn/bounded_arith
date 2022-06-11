@@ -888,15 +888,16 @@ module Make (C : Sigs.Coefficient) = struct
     let potential_bounds = (List.map mk_z3_upper uppers) @ (List.map mk_z3_lower lowers) in
     let true_bounds, _ = find_cons ctx solver potential_bounds in
 
-    let partitioner (ups, lows, viol, i) b = 
+    let partitioner (ups, lows, viol_ups, viol_lows, i) b = 
       if List.mem i true_bounds then
-        if i < List.length uppers then S.add (List.nth uppers i) ups, lows, viol, i+1
-        else ups, S.add (List.nth lowers (i - (List.length uppers))) lows, viol, i+1
+        if i < List.length uppers then S.add (List.nth uppers i) ups, lows, viol_ups, viol_lows, i+1
+        else ups, S.add (List.nth lowers (i - (List.length uppers))) lows, viol_ups, viol_lows, i+1
       else
-        ups, lows, b :: viol, i+1
+        if i < List.length uppers then ups, lows, b :: viol_ups, viol_lows, i+1
+        else ups, lows, viol_ups, b :: viol_lows, i+1
     in
-    let (real_ups, real_lows, violated_bs, _) = List.fold_left partitioner (S.empty, S.empty, [], 0) potential_bounds in
-    real_ups, real_lows, violated_bs
+    let (real_ups, real_lows, violated_ups, violated_lows, _) = List.fold_left partitioner (S.empty, S.empty, [], [], 0) potential_bounds in
+    real_ups, real_lows, violated_ups, violated_lows
 
 
   (*let pp_bounds is_lower t f bounds = 
@@ -1005,9 +1006,13 @@ module Make (C : Sigs.Coefficient) = struct
         )
     in*)
     (*let env = A.int_list_to_env (fresh_dim :: dims_in_ord) in*)
-    let rec find_optimal_real_bound (uppers, lowers) dont_search = 
+    let rec find_optimal_real_bound (uppers, lowers) (searched_uppers, searched_lowers) = 
       if not (S.is_empty uppers) && not (S.is_empty lowers) then (S.to_list uppers, S.to_list lowers)
       else
+        let dont_search = 
+          if S.is_empty uppers && S.is_empty lowers then Z3.Boolean.mk_or ctx [Z3.Boolean.mk_and ctx searched_lowers; Z3.Boolean.mk_and ctx searched_uppers]
+          else if S.is_empty uppers then Z3.Boolean.mk_and ctx searched_uppers
+          else Z3.Boolean.mk_and ctx searched_lowers in
         (*let poly = A.to_poly curr_explored in*)
         (*Z3.Solver.add solver [Z3.Boolean.mk_not ctx (poly_to_z3 ctx poly)];*)
         match Z3.Solver.check solver [dont_search] with
@@ -1026,10 +1031,10 @@ module Make (C : Sigs.Coefficient) = struct
                 (*let p = A.to_poly (A.of_poly env p) in*)
                 Log.log_line_s ~level:`trace "Conjectured bounds";
                 Log.log ~level:`trace pp (Some p);
-                let (real_uppers, real_lowers, unreal) = check_bounds ctx fresh_dim t solver p in
-
-                let next_dont_search = Z3.Boolean.mk_and ctx [Z3.Boolean.mk_not ctx (Z3.Boolean.mk_and ctx unreal); dont_search] in
-                find_optimal_real_bound (S.union real_uppers uppers, S.union real_lowers lowers) next_dont_search)
+                let (real_uppers, real_lowers, unreal_uppers, unreal_lowers) = check_bounds ctx fresh_dim t solver p in
+                let next_unreal_uppers = List.map (Z3.Boolean.mk_not ctx) unreal_uppers @ searched_uppers in
+                let next_unreal_lowers = List.map (Z3.Boolean.mk_not ctx) unreal_lowers @ searched_lowers in
+                find_optimal_real_bound (S.union real_uppers uppers, S.union real_lowers lowers) (next_unreal_uppers, next_unreal_lowers))
     in
 
 
@@ -1084,5 +1089,5 @@ module Make (C : Sigs.Coefficient) = struct
               find_optimal_real_bound (S.union real_uppers found_uppers, S.union real_lowers found_lowers) (smallest_poly :: areas_expored)            
           )
     in*)
-    find_optimal_real_bound (S.empty, S.empty) (Z3.Boolean.mk_true ctx)
+    find_optimal_real_bound (S.empty, S.empty) ([Z3.Boolean.mk_true ctx], [Z3.Boolean.mk_true ctx])
 end

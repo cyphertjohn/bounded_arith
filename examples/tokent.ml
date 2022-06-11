@@ -24,6 +24,6 @@ let withdrawJoined = List.map from_string [
 				]
 
 let tupperAndTlower = Bound.Log.log_time "Rewrite joined no worse" (Bound.Rewriter.rewrite ~sat:3 (withdrawSplit @ withdrawJoined)
-						  (List.map from_string ["x"; "supply0"; "balance0"; "liquidFunds"])
+						  (List.map from_string ["x"; "supply0 - 2x"; "balance0 - 2x"; "liquidFunds"])
 						  vars_to_keep)
    						  [from_string "balanceSplit - balanceJoined"]
