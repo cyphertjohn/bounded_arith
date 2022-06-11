@@ -23,7 +23,7 @@ let transferYAfterX = List.map from_string [
 					"floor((x * supplyY) / (balance)) - sharesY";
 				]
 
-let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:3 (transferX @ transferYAfterX @ [from_string "10^2 - E18"])
+let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:3 ~compute_hull:false (transferX @ transferYAfterX @ [from_string "10^2 - E18"])
 						  (List.map from_string ["supply0 - 1" (* shares = supply == 0 ? amount : amount.mul(supply) / bal *); 
 						  						(* "priceAtLastFee0"; *) 
 						  						"performanceFee"; 

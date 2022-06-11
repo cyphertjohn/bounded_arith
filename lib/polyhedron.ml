@@ -777,6 +777,45 @@ module Make (C : Sigs.Coefficient) = struct
     let z3_new_strict = List.map (cntsr_to_z3 `gt ctx) new_strict in (* not sure about this *)
     Z3.Solver.add solver (z3_new_eqs @ z3_new_ineqs @ z3_new_strict);
     non_strict_to_upgrade, new_ineqs, new_strict
+
+
+  let discover_eqs_ineqs ctx solver poly pot_eqs pot_ineqs = 
+    let pot_cons = List.map (cntsr_to_z3 `eq ctx) pot_eqs @ List.map (cntsr_to_z3 `ge ctx) pot_ineqs in
+    let (cons, _) = find_cons ctx solver pot_cons in
+    let new_eqs, new_poly, _ = 
+       List.fold_left (
+        fun (es, p, ind) cnstr -> 
+          if List.mem ind cons && ind < List.length pot_eqs then
+            let temp_p = add_cnstr `eq p cnstr in
+            match temp_p with
+            | Bot -> ind :: es, Bot, ind + 1
+            | Ne pp -> ind :: es, Ne {pp with non_strict = S.remove cnstr pp.non_strict}, ind+1
+          else if List.mem ind cons then
+            es, add_cnstr `ge p cnstr, ind+1
+          else es, p, ind + 1) ([], poly, 0) (pot_eqs @ pot_ineqs) in
+    new_poly, new_eqs
+
+
+  let saturate_c ctx solver eqs non_strict strict form ineqs_to_check =
+    (*Log.log_line_s ~level:`trace "Saturate w.r.t formula:";
+    Log.log_line_s ~level:`trace (Z3.Expr.to_string form);
+    Log.log_line_s ~level:`trace "";
+    Log.log_line_s ~level:`trace "And Solver";
+    Log.log_line_s ~level:`trace (Z3.Solver.to_string solver);
+    Log.log_line_s ~level:`trace "";*)
+
+    let poly = Ne {eqs = S.of_list eqs; non_strict = S.of_list non_strict; strict = S.of_list strict} in
+    Z3.Solver.push solver;
+    Z3.Solver.add solver [form];
+    let eq_poly, non_strict_to_upgrade = discover_eqs_ineqs ctx solver poly non_strict ineqs_to_check in
+
+    let _, new_ineqs, new_strict = find_new_constraints poly eq_poly in
+    Z3.Solver.pop solver 1;
+    let z3_new_eqs = List.map (cntsr_to_z3 `eq ctx) (List.map (List.nth non_strict) non_strict_to_upgrade) in
+    let z3_new_ineqs = List.map (cntsr_to_z3 `ge ctx) new_ineqs in
+    let z3_new_strict = List.map (cntsr_to_z3 `gt ctx) new_strict in (* not sure about this *)
+    Z3.Solver.add solver (z3_new_eqs @ z3_new_ineqs @ z3_new_strict);
+    non_strict_to_upgrade, new_ineqs, new_strict
   
 
   type bound = NoBound | Upper of polyhedron | Lower of polyhedron | Both of polyhedron

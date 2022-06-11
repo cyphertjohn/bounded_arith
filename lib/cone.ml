@@ -326,12 +326,14 @@ module Make(P : Poly.Polynomial) = struct
       (IM.remove const_dim coef_map, const)
     with Not_found -> coef_map, C.zero
 
-  let saturate (c : cone) (impls : impl list) =
-    
-    let reduce_impl_and_z3 con is = 
-      let reduced_impls = List.map (fun (h, cons) -> fst (Cl.reduce h con.closure), fst (Cl.reduce cons con.closure)) is in
+  let saturate comp_hull (c : cone) (impls : impl list) =
+    let reduce_impls con is = 
+      List.map (
+        fun (h, cons) -> extract_const (poly_to_dim (fst (Cl.reduce h con.closure))), extract_const (poly_to_dim (fst (Cl.reduce cons con.closure)))) is in
+
+    let impl_to_z3 con reduced_impls = 
       let mapper (h, cons) = 
-        Z3.Boolean.mk_implies con.z3ctx (P.cntsr_to_z3 `ge con.z3ctx (extract_const (poly_to_dim h))) (P.cntsr_to_z3 `ge con.z3ctx (extract_const (poly_to_dim cons)))
+        Z3.Boolean.mk_implies con.z3ctx (P.cntsr_to_z3 `ge con.z3ctx h) (P.cntsr_to_z3 `ge con.z3ctx cons)
       in
       Z3.Boolean.mk_and con.z3ctx (List.map mapper reduced_impls)
     in
@@ -340,9 +342,13 @@ module Make(P : Poly.Polynomial) = struct
     let z3_cnstrs = (List.map (P.cntsr_to_z3 `eq c.z3ctx) eqs_extract) @ (List.map ((P.cntsr_to_z3 `ge c.z3ctx) % snd) (ids_ineqs_extract)) in
     let solver = Z3.Solver.mk_simple_solver c.z3ctx in
     Z3.Solver.add solver z3_cnstrs;
-    let init_form = reduce_impl_and_z3 c impls in
-    let (ineqs_to_upgrade, new_ineqs, _) = P.saturate c.z3ctx solver eqs_extract (List.map snd ids_ineqs_extract) [] init_form in
-    Log.log_line_s ~level:`trace ("Found " ^ (string_of_int (List.length new_ineqs)) ^ " new consequences");
+    let reduced_impls = reduce_impls c impls in
+    let init_form = impl_to_z3 c reduced_impls in
+    let (ineqs_to_upgrade, new_ineqs, new_strict) = 
+      if comp_hull then P.saturate c.z3ctx solver eqs_extract (List.map snd ids_ineqs_extract) [] init_form 
+      else P.saturate_c c.z3ctx solver eqs_extract (List.map snd ids_ineqs_extract) [] init_form  (List.map snd reduced_impls)
+      in
+    Log.log_line_s ~level:`trace ("Found " ^ (string_of_int (List.length (new_ineqs @ new_strict))) ^ " new consequences");
     Log.log_line_s ~level:`trace ("Found " ^ (string_of_int (List.length ineqs_to_upgrade)) ^ " new equations");
     let rec fixpoint ine_with_ids is_to_up non_strict_to_add (*strict_to_add*) co = 
       Log.log_line_s ~level:`trace "Curr cone";
@@ -367,13 +373,17 @@ module Make(P : Poly.Polynomial) = struct
         let curr_generators = List.map (extract_const % poly_to_dim) (Cl.get_generators added_ineq_cone.closure) in
         let curr_ineqs_and_ids = List.map (fun (id, (i, _)) -> id, extract_const i) (BatList.of_enum (IM.enum added_ineq_cone.ineqs)) in
         Z3.Solver.add solver (List.map (P.cntsr_to_z3 `eq added_ineq_cone.z3ctx) curr_generators);
-        let next_form = reduce_impl_and_z3 added_ineq_cone impls in
-        let (next_is_to_up, next_new_ineqs, _) = P.saturate added_ineq_cone.z3ctx solver curr_generators (List.map snd curr_ineqs_and_ids) [] next_form in
+        let new_red_impls = reduce_impls added_ineq_cone impls in (* TODO: remove discovered things from impl *)
+        let next_form = impl_to_z3 added_ineq_cone new_red_impls in
+        let (next_is_to_up, next_new_ineqs, next_new_strict) = 
+          if comp_hull then P.saturate added_ineq_cone.z3ctx solver curr_generators (List.map snd curr_ineqs_and_ids) [] next_form 
+          else P.saturate_c added_ineq_cone.z3ctx solver curr_generators (List.map snd curr_ineqs_and_ids) [] next_form  (List.map snd new_red_impls)
+          in
         Log.log_line_s ~level:`debug ("Found " ^ (string_of_int (List.length next_new_ineqs)) ^ " new consequences");
         Log.log_line_s ~level:`debug ("Found " ^ (string_of_int (List.length next_is_to_up)) ^ " new equations");
-        fixpoint curr_ineqs_and_ids next_is_to_up next_new_ineqs added_ineq_cone
+        fixpoint curr_ineqs_and_ids next_is_to_up (next_new_ineqs @ next_new_strict) added_ineq_cone
     in
-    fixpoint ids_ineqs_extract ineqs_to_upgrade new_ineqs c
+    fixpoint ids_ineqs_extract ineqs_to_upgrade (new_ineqs @ new_strict) c
 
 
   (*let saturate (c : cone) (impls : impl list) =
@@ -443,7 +453,7 @@ module Make(P : Poly.Polynomial) = struct
     find_all_cons (pot_eqs @ pot_ineqs) [] 0 c*)
 
 
-  let preprocess_ineqs p c = 
+  (*let preprocess_ineqs p c = 
     let (_, lm) = lt (make_sorted_poly (Cl.get_ord c.closure) p) in
     let const_dim = mon_to_id (snd (make_mon_from_coef (C.zero))) in
     let folder id (ineq, _) (consts, parity_map) = 
@@ -486,7 +496,7 @@ module Make(P : Poly.Polynomial) = struct
     in
     let ineqs_to_remove = IM.fold find_ineq_to_remove c.ineqs const_ineqs in
     Log.log_line_s ~level:`trace ("Preprocessing removed " ^ (string_of_int (List.length ineqs_to_remove)) ^ " ineqs");
-    List.fold_left (fun map id_to_remove-> IM.remove id_to_remove map) c.ineqs ineqs_to_remove
+    List.fold_left (fun map id_to_remove-> IM.remove id_to_remove map) c.ineqs ineqs_to_remove*)
 
   (*let reduce_ineq p c = 
     match is_const p with
@@ -597,7 +607,7 @@ module Make(P : Poly.Polynomial) = struct
 
   let i_reduce_proj p c = 
     let bigD = fresh_dim () in
-    let ineqs = preprocess_ineqs p c in
+    let ineqs = c.ineqs in
     let p_ired_m = extract_const (poly_to_dim p) in
     let all_dims = IM.fold (fun _ (poly, _) dim_set -> BatSet.union (BatSet.of_enum (IM.keys poly)) dim_set) ineqs BatSet.empty in
     let sorted_dims = List.rev (List.sort (fun i j -> Cl.get_ord c.closure (id_to_mon i) (id_to_mon j)) (BatSet.elements all_dims)) in
@@ -636,7 +646,7 @@ module Make(P : Poly.Polynomial) = struct
     (*normalize unnormal_c*)
     unnormal_c*)
 
-  let make_cone_cl ?(sat = 1) ?(ineqs = []) ?(impls = []) cl = 
+  let make_cone_cl ?(sat = 1) ?(ineqs = []) ?(impls = []) ?(hull = true) cl = 
     let ineqs = ineqs @ (Cl.instantiate_ineqs cl) in
     let impls = impls @ (Cl.instantiate_impls cl) in
     let red_add_ine co ine = 
@@ -645,7 +655,7 @@ module Make(P : Poly.Polynomial) = struct
     in
     let prod_sat_cone = 
       Log.log_time_cum "prod sat" (List.fold_left red_add_ine (make_empty_cone sat cl)) ineqs in
-    let unnormal_c = Log.log_time_cum "impl sat" (saturate prod_sat_cone) impls in
+    let unnormal_c = Log.log_time_cum "impl sat" (saturate hull prod_sat_cone) impls in
     (*Log.log_time_cum "normalize" normalize unnormal_c*)
     unnormal_c
   
