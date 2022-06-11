@@ -1,8 +1,9 @@
 (executable
   (name mytoplevel)
-  (libraries bound utop)
+  (libraries bound gmp camlidl utop)
   (promote (until-clean) (into ..))
   (link_flags -linkall)
+  (flags -cclib -lgmp_caml)
   (modules mytoplevel)
   (modes byte)
 )

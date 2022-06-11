@@ -20,5 +20,6 @@
    (batteries :build)
    (faugere :build)
    (faugere_zarith :build)
+   (apron :build)
  )
 )

@@ -13,7 +13,7 @@ module Make(P : Poly.Polynomial) : ( sig
 
   val get_ord : closure -> (monic_mon -> monic_mon -> int)
 
-  val reduce : poly -> closure -> poly
+  val reduce : poly -> closure -> poly * bool
 
   val pp_c : Format.formatter -> closure -> unit
 
@@ -22,5 +22,7 @@ module Make(P : Poly.Polynomial) : ( sig
   val instantiate_impls : closure -> (poly * poly) list
 
   val instantiate_ineqs : closure -> poly list
+
+  val get_generators : closure -> poly list
 
   end)

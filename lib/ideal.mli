@@ -11,7 +11,7 @@ module Make (P : Poly.Polynomial) : (
 
     val ppi : Format.formatter -> ideal -> unit
 
-    val reduce : poly -> ideal -> poly
+    val reduce : poly -> ideal -> poly * bool
 
     val make_ideal_f : P.V.Mi.map -> bool P.V.M.map -> (int * P.V.t) list -> poly list -> ideal
 

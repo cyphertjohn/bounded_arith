@@ -13,7 +13,7 @@ let t1_2 = from_string "floor((startPrice - minimumPrice) / (endTime - startTime
 let t2_2 = from_string "(t2 - startTime) drop - diff2" 
 let t3_2 = from_string "startPrice - diff2 - price2" 
 
-let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite [t1;t2;t3;t1_2;t2_2;t3_2] 
+let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:3 [t1;t2;t3;t1_2;t2_2;t3_2] 
 									  [from_string "startPrice - minimumPrice";
 									  	from_string "endTime - startTime";
 									  	from_string "t1 - startTime";
@@ -21,7 +21,7 @@ let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite
 										from_string "endTime - t2"]
 									  vars_to_keep)
 									  [(from_string "price1");
-									   (from_string "-price1");
 									   (from_string "price2 - price1")]
+
 
 

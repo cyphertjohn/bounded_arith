@@ -16,6 +16,8 @@ module type Polynomial = sig
 
   val id_to_mon : int -> monic_mon
 
+  val fresh_dim : unit -> int
+
   val divide_mon : mon -> mon -> mon option
 
   val lcm_of_mon : monic_mon -> monic_mon -> monic_mon

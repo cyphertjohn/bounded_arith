@@ -32,5 +32,4 @@ let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite
 						  						(* "E18";  *)
 						  						"valueAtLastCollectionPriceY - balance" (* if (totalBalance <= valueAtLastCollectionPrice) return 0; *)])
 						  vars_to_keep)
-   						  [(from_string "sharesX - sharesY");
-							from_string "sharesY - sharesX"]
+   						  [(from_string "sharesX - sharesY")]

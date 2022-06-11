@@ -133,17 +133,17 @@ module Make (P : Poly.Polynomial) = struct
     Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo " +"; Format.pp_print_space fo ()) pp_mb f filtered_list;
     Format.pp_close_box f (); Format.pp_close_box f ())*)
 
-  let reduce p (i : ideal) : poly = 
+  let reduce p (i : ideal) : poly * bool = 
     match i.basis with
     | Top ->
-      from_const_s "0"
-    | Bot -> p
+      from_const_s "0", true
+    | Bot -> p, false
     | I basis -> 
-      let (_, (_, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
+      let (reduction_occurred, (_, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
       (*let (reduction_occurred, (mults, rem)) = division i.ord basis (make_sorted_poly i.ord p) in
       if not reduction_occurred then Log.log ~level:`trace (pp_red i.ord) None
       else Log.log ~level:`trace (pp_red i.ord) (Some (p, List.map fst basis, mults, fst rem));*)
-      get_poly rem
+      get_poly rem, reduction_occurred
 
   (*let reduce_just p (i : ideal) =
     match i.basis with
@@ -299,7 +299,7 @@ module Make (P : Poly.Polynomial) = struct
     match i.basis with
     | Top -> true
     | Bot -> false
-    | I _ -> is_zero (reduce p i)
+    | I _ -> is_zero (fst (reduce p i))
 
   let get_generators (i : ideal) : poly list = 
     match i.basis with
