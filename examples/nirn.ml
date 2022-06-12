@@ -30,6 +30,8 @@ let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite
 						  						"balance"; 
 						  						"x"; 
 						  						(* "E18";  *)
-						  						"valueAtLastCollectionPriceY - balance" (* if (totalBalance <= valueAtLastCollectionPrice) return 0; *)])
+						  						"balance - valueAtLastCollectionPriceY"; (* if (totalBalance <= valueAtLastCollectionPrice) return 0; *)
+						  						"balance - feesY"; (* totalBalance.sub(totalFees); see https://docs.openzeppelin.com/contracts/2.x/api/math#SafeMath-sub-uint256-uint256- *)
+						  					])
 						  vars_to_keep)
    						  [(from_string "sharesX - sharesY")]
