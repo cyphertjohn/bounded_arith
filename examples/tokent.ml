@@ -27,3 +27,10 @@ let tupperAndTlower = Bound.Log.log_time "Rewrite joined no worse" (Bound.Rewrit
 						  (List.map from_string ["x"; "supply0 - 2x"; "balance0 - 2x"; "liquidFunds"])
 						  vars_to_keep)
    						  [from_string "balanceSplit - balanceJoined"]
+
+let () = Bound.Log.log_line_s "balanceSplit - balanceJoined upper bounds"
+let () = List.iter (fun u -> Bound.Log.log pp (Some u)) (fst (List.hd tupperAndTlower))
+let () = Bound.Log.log_line_s ""
+
+let () = Bound.Log.log_line_s "balanceSplit - balanceJoined lower bounds"
+let () = List.iter (fun l -> Bound.Log.log pp (Some l)) (snd (List.hd tupperAndTlower))

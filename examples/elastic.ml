@@ -49,5 +49,10 @@ let ts = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:3 [t1;t
 
 let tuppers, tlowers = List.hd ts
 
+let () = Bound.Log.log_line_s "t upper bounds"
+let () = List.iter (fun u -> Bound.Log.log pp (Some u)) tuppers
+let () = Bound.Log.log_line_s ""
 
+let () = Bound.Log.log_line_s "t lower bounds"
+let () = List.iter (fun l -> Bound.Log.log pp (Some l)) tlowers
 

@@ -25,3 +25,22 @@ let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite
 
 
 
+let price1uppers, price1lowers = List.hd tupperAndTlower
+
+let price2diffprice1upper, price2diffprice1lower = List.hd (List.tl tupperAndTlower)
+
+let () = Bound.Log.log_line_s "price1 upper bounds"
+let () = List.iter (fun u -> Bound.Log.log pp (Some u)) price1uppers
+let () = Bound.Log.log_line_s ""
+
+let () = Bound.Log.log_line_s "price1 lower bounds"
+let () = List.iter (fun u -> Bound.Log.log pp (Some u)) price1lowers
+let () = Bound.Log.log_line_s ""
+
+let () = Bound.Log.log_line_s "price2 - price1 upper bounds"
+let () = List.iter (fun u -> Bound.Log.log pp (Some u)) price2diffprice1upper
+let () = Bound.Log.log_line_s ""
+
+let () = Bound.Log.log_line_s "price2 - price1 lower bounds"
+let () = List.iter (fun u -> Bound.Log.log pp (Some u)) price2diffprice1lower
+let () = Bound.Log.log_line_s ""

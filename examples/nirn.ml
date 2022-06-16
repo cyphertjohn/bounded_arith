@@ -33,3 +33,10 @@ let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite
 						  						"valueAtLastCollectionPriceY - balance" (* if (totalBalance <= valueAtLastCollectionPrice) return 0; *)])
 						  vars_to_keep)
    						  [(from_string "sharesX - sharesY")]
+
+let () = Bound.Log.log_line_s "sharesX - sharesY upper bounds"
+let () = List.iter (fun u -> Bound.Log.log pp (Some u)) (fst (List.hd tupperAndTlower))
+let () = Bound.Log.log_line_s ""
+
+let () = Bound.Log.log_line_s "sharesX - sharesY lower bounds"
+let () = List.iter (fun l -> Bound.Log.log pp (Some l)) (snd (List.hd tupperAndTlower))
