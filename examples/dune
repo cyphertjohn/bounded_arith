@@ -1,39 +1,7 @@
-(executable
-  (name elastic)
+(executables
+  (names elastic fixedPointInt manualPrice nirn tokent)
   (libraries bound)
   (promote (until-clean) (into ..))
   ;(flags -cclib -lgmp_caml)
-  (modules elastic)
-)
-
-(executable
-  (name fixedPointInt)
-  (libraries bound)
-  (promote (until-clean) (into ..))
-  ;(flags -cclib -lgmp_caml)
-  (modules fixedPointInt)
-)
-
-(executable
-  (name manualPrice)
-  (libraries bound)
-  (promote (until-clean) (into ..))
-  ;(flags -cclib -lgmp_caml)
-  (modules manualPrice)
-)
-
-(executable
-  (name nirn)
-  (libraries bound)
-  (promote (until-clean) (into ..))
-  ;(flags -cclib -lgmp_caml)
-  (modules nirn)
-)
-
-(executable
-  (name tokent)
-  (libraries bound)
-  (promote (until-clean) (into ..))
-  ;(flags -cclib -lgmp_caml)
-  (modules tokent)
+  (modules elastic fixedPointInt manualPrice nirn tokent symBoundBenchmark)
 )

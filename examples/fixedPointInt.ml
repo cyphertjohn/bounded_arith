@@ -1,10 +1,15 @@
 open Bound.Expr
+open SymBoundBenchmark
 
 let vars_to_keep = ["a"; "b"; "sf"]
 
 let () = Bound.Log.log_times := true
 
-let rewrites = Bound.Log.log_time "Rewrite mult/div upper" (Bound.Rewriter.rewrite ~sat:3 [] 
+let () = SymBoundBenchmark.process_cmdline ()
+let sat_bound = SymBoundBenchmark.sat_bound ()
+let compute_hull = SymBoundBenchmark.compute_hull ()
+
+let rewrites = Bound.Log.log_time "Rewrite mult/div upper" (Bound.Rewriter.rewrite ~sat:sat_bound ~compute_hull:compute_hull [] 
 									  [
 										from_string "sf";
 										from_string "b";
