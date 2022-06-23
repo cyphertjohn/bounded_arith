@@ -10,13 +10,15 @@ import statistics
 EXAMPLES_BIN_DIR = "."
 NUM_RUNS = 3
 
+NIRN_NAME = "nirn"
+
 BENCHMARKS = [
 	("elastic", [r"upper \& lower", "5", "3", "382", "362"], ["\\checkmark"]),
 	("fixedPointIntMulDiv", [r"upper \& lower", "0", "2", "362", "452"], ["\\checkmark"]),
 	("fixedPointIntDivMul", [r"upper \& lower", "0", "2", "362", "452"], ["\\checkmark"]),
 	("manualPrice", [r"upper \& lower", "3", "3", "223", "216"], ["\\checkmark"]),
 	("manualPriceMonotone", [r"monotonicity", "6", "5", "223", "216"], ["\\checkmark"]),
-	# ("nirn", [r"upper", "10", "5", "1196", "2297"], ["\\checkmark"]), # TODO: resurrect (commented out because slow)
+	(NIRN_NAME, [r"upper", "10", "5", "1196", "2297"], ["\\checkmark"]), # TODO: resurrect (commented out because slow)
 	("tokent", [r"upper \& lower", "10", "4", "244", "558"], ["\\checkmark"]),
 ]
 
@@ -121,7 +123,7 @@ def multiple_runs_and_summarize(bench_config, num_runs):
 def time_to_str(t):
 	return str(round(t, 1))
 
-def bench_basic_table(also_nirn=True, also_convex=True):
+def bench_basic_table(also_nirn=True):
 	logger.info("Start bench")
 
 	with open(OUTPUT_BASIC_TABLE_PATH, "wt") as f:
@@ -129,6 +131,9 @@ def bench_basic_table(also_nirn=True, also_convex=True):
 		f.write(BASIC_TABLE_HEADER_LATEX)
 
 		for bench_name, aux_data_pre, aux_data_post in BENCHMARKS:
+			if (not also_nirn) and bench_name == NIRN_NAME:
+				continue
+
 			saturation_bound = 3
 			use_convex = False
 			bench_config = (bench_name, saturation_bound, use_convex)
