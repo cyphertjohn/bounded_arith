@@ -35,7 +35,6 @@ BASIC_TABLE_HEADER_LATEX = r"""\begin{table}[t!]
             Column 8 gives the time in seconds to saturate the cone. 
             Column 9 gives the time Z3 took to solve the final optimization problem given the resulting cone. 
             Column 10 displays whether the result of the system was useful. All experiments in this table were taken using a product saturation depth of 3. 
-            \yf{manual price: monotone property has different number of eqs and ineqs}
 	}}}
 	\resizebox{.99\textwidth}{!}{
 \begin{tabular}{|| l | l | r | r || r | r | r | r | r | c ||}
