@@ -9,13 +9,41 @@ import statistics
 
 EXAMPLES_BIN_DIR = "."
 NUM_RUNS = 3
+
 BENCHMARKS = [
-	("elastic", []),
-	("fixedPointInt", []),
-	("manualPrice", []), # TODO: split monotonicity to another exe
-	# ("nirn", []), # TODO: resurrect (commented out becuase slowjust slow)
-	("tokent", []),
+	("elastic", [r"upper \& lower", "5", "3", "382", "362"], ["\\checkmark"]),
+	("fixedPointInt", [r"upper \& lower", "0", "2", "362", "452"], ["\\checkmark"]),
+	("manualPrice", [r"upper \& lower", "6", "5", "223", "216"], ["\\checkmark"]), # TODO: split monotonicity to another exe
+	# ("nirn", [r"upper", "10", "5", "1196", "2297"], ["\\checkmark"]), # TODO: resurrect (commented out because slow)
+	("tokent", [r"upper \& lower", "10", "4", "244", "558"], ["\\checkmark"]),
 ]
+
+OUTPUT_BASIC_TABLE_PATH = "basic_table.tex"
+
+BASIC_TABLE_HEADER_LATEX = r"""\begin{table}[t!]
+	\centering
+	{\small \caption{\label{Ta:Rewriting}
+            {\small This table displays the results of the running the system on the examples. 
+            Column 2 indicates the number of terms asked to rewrite for a given set of assumptions. \yf{remove?}
+            Column 3 and 4 respectively give the number of equation and inequality assumptions (not including instantiated axioms) initially given. \yf{hardcoded numbers not up to date}
+            Columns 5 and 6 respectively give the number of distinct monomials and inequalities generated from the saturated cone. 
+            Column 7 gives the overall time in seconds to solve all queries. 
+            Column 8 gives the time in seconds to saturate the cone. 
+            Column 9 gives the time Z3 took to solve the final optimization problem given the resulting cone. 
+            Column 10 displays whether the result of the system was useful. All experiments in this table were taken using a product saturation depth of 3. 
+            \yf{manual price: monotone property has different number of eqs and ineqs}
+	}}}
+	\resizebox{.99\textwidth}{!}{
+\begin{tabular}{|| l | l | r | r || r | r | r | r | r | c ||}
+\hline
+Benchmark name & \#t's & \#eq's & \#in's & \#m & \#in's & time & csat time & reduce time & res\\
+\hline\hline
+"""
+
+BASIC_TABLE_TAIL_LATEX = r"""\end{tabular}
+}
+\end{table}
+"""
 
 global logger
 
@@ -88,22 +116,47 @@ def multiple_runs_and_summarize(bench_config, num_runs):
 							statistics.mean(s.reduce_time for s in summaries),
 							statistics.mean(s.total_time for s in summaries))
 
-def bench():
+def time_to_str(t):
+	return str(round(t, 1))
+
+def bench_basic_table():
 	logger.info("Start bench")
 
-	for bench_name, aux_data in BENCHMARKS:
-		saturation_bound = 1
-		use_convex = False
-		bench_config = (bench_name, saturation_bound, use_convex)
+	with open(OUTPUT_BASIC_TABLE_PATH, "wt") as f:
 
-		res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS)
-		logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config, res_summary))
+		f.write(BASIC_TABLE_HEADER_LATEX)
+
+		for bench_name, aux_data_pre, aux_data_post in BENCHMARKS:
+			saturation_bound = 1
+			use_convex = False
+			bench_config = (bench_name, saturation_bound, use_convex)
+
+			res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS)
+			logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config, res_summary))
+
+			f.write(bench_name)
+			f.write(" & ")
+			f.write(" & ".join(aux_data_pre))
+			f.write(" & ")
+			f.write(time_to_str(res_summary.total_time))
+			f.write(" & ")
+			f.write(time_to_str(res_summary.csat_time))
+			f.write(" & ")
+			f.write(time_to_str(res_summary.reduce_time))
+			if aux_data_post:
+				f.write(" & ")
+			f.write(" & ".join(aux_data_post))
+			f.write("\\\\\n")
+			f.write("\\hline\n")
+			f.write("\n")
+
+		f.write(BASIC_TABLE_TAIL_LATEX)
 
 	logger.info("End bench")
 
 def main():
 	set_logger()
-	bench()
+	bench_basic_table()
 
 if __name__ == "__main__":
 	main()
