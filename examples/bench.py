@@ -74,14 +74,14 @@ def execute_benchmark(bench_config):
 
 	convex_config = ["-hull"] if use_convex else []
 	logger.info("Executing %s. Saturation bound: %d. Use convex: %r" % (bench_name, saturation_bound, use_convex) )
-	completed = subprocess.run(["%s/%s.exe" % (EXAMPLES_BIN_DIR,bench_name), "sat %d" % saturation_bound] + convex_config,
+	completed = subprocess.run(["%s/%s.exe" % (EXAMPLES_BIN_DIR,bench_name), "-sat", str(saturation_bound)] + convex_config,
 							  capture_output=True)
 	process_output = completed.stdout
 	process_stderr = completed.stderr
 	logger.info("%s terminated with output: %s" % (str(bench_config), process_output))
 	logger.info("%s terminated with stderr: %s" % (str(bench_config), process_stderr))
 	if process_stderr.strip():
-		logger.error("Failed to execute benchmark %s. Mayday" % bench_config)
+		logger.error("Failed to execute benchmark %s. Mayday" % str(bench_config))
 		assert False
 
 	return str(process_output)
@@ -129,7 +129,7 @@ def bench_basic_table(also_nirn=True, also_convex=True):
 		f.write(BASIC_TABLE_HEADER_LATEX)
 
 		for bench_name, aux_data_pre, aux_data_post in BENCHMARKS:
-			saturation_bound = 1
+			saturation_bound = 3
 			use_convex = False
 			bench_config = (bench_name, saturation_bound, use_convex)
 
