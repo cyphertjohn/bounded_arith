@@ -1,4 +1,5 @@
 open Bound.Expr
+open SymBoundBenchmark
 
 (*let t1 = from_string "x - v b /e"
 let t2 = from_string "b + floor(a b / e) - z"
@@ -36,9 +37,13 @@ let t5 = from_string "y - floor(v bp / ep)"
 
 let vars_to_keep = ["v"; "a"; "e"; "b"]
 
+let () = SymBoundBenchmark.process_cmdline ()
+let sat_bound = SymBoundBenchmark.sat_bound ()
+let compute_hull = SymBoundBenchmark.compute_hull ()
+
 let () = Bound.Log.log_times := true
 
-let ts = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:3 [t1;t2;t3;t4;t5] 
+let ts = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:sat_bound ~compute_hull:compute_hull [t1;t2;t3;t4;t5] 
 						  [
 							from_string "v";
 						  	from_string "e";
