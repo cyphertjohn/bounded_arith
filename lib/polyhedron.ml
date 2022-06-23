@@ -1,11 +1,11 @@
-module Make (C : Sigs.Coefficient) = struct
+module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
 
   let (%) = BatPervasives.(%)
 
 
-  module DM = BatMap.Make(Int)
+  module DM = V.M
   
-  type lterm = C.coef DM.t * C.coef
+  type lterm = C.coef DM.map * C.coef
 
   let empty_m = DM.empty
 
@@ -15,8 +15,8 @@ module Make (C : Sigs.Coefficient) = struct
     else 
       let tlist = DM.fold 
         (fun dim coef l -> 
-          if C.cmp coef C.zero < 0 then (C.to_string_c (C.mulc coef (C.from_string_c "-1")) ^ ".v" ^ (string_of_int dim), true) :: l
-          else (C.to_string_c coef ^ ".v" ^ (string_of_int dim), false) :: l) (fst lt) [] in
+          if C.cmp coef C.zero < 0 then (C.to_string_c (C.mulc coef (C.from_string_c "-1")) ^ ".v" ^ (V.to_string dim), true) :: l
+          else (C.to_string_c coef ^ ".v" ^ (V.to_string dim), false) :: l) (fst lt) [] in
       let tlist = 
         if C.cmp (snd lt) C.zero < 0 then List.rev ((C.to_string_c (C.mulc (C.from_string_c "-1") (snd lt)), true) :: tlist)
         else if C.cmp (snd lt) C.zero = 0 then List.rev tlist
@@ -170,20 +170,18 @@ module Make (C : Sigs.Coefficient) = struct
 
     let bottom env = Apron.Abstract1.bottom man env
 
-    let dim_to_var d = Apron.Var.of_string ("v." ^ (string_of_int d))
+    let var_to_apron_var d = Apron.Var.of_string (V.to_string d)
 
-    let var_to_dim v = 
-      let vstr = Apron.Var.to_string v in
-      int_of_string (String.sub vstr 2 ((String.length vstr) - 2))
+    let var_to_dim v = Apron.Var.to_string v 
 
-    let int_list_to_env dim_list = Apron.Environment.make [||] (Array.of_list (List.map dim_to_var dim_list))
+    let var_list_to_env dim_list = Apron.Environment.make [||] (Array.of_list (List.map (Apron.Var.of_string % V.to_string) dim_list))
 
     let of_poly env poly : t = 
       match poly with
       | Bot -> Apron.Abstract1.bottom man env
       | Ne poly ->
         let lterm_to_lincons typ (map, const) = 
-          let coef_list = DM.fold (fun dim coef l -> (Apron.Coeff.s_of_mpq (Mpq.of_string (C.to_string_c coef)), dim_to_var dim) :: l) map [] in
+          let coef_list = DM.fold (fun dim coef l -> (Apron.Coeff.s_of_mpq (Mpq.of_string (C.to_string_c coef)), var_to_apron_var dim) :: l) map [] in
           let a_const = (*if C.cmp const C.zero = 0 then None else*) Some (Apron.Coeff.s_of_mpq (Mpq.of_string (C.to_string_c const))) in
           let expr = Apron.Linexpr1.make env in
           Apron.Linexpr1.set_list expr coef_list a_const;
@@ -213,7 +211,7 @@ module Make (C : Sigs.Coefficient) = struct
           let map = ref (empty_m) in
           let iterator c v = 
             if C.cmp (coef_to_c c) C.zero <> 0 then
-              let dim = var_to_dim v in
+              let dim = V.of_string (var_to_dim v) in
               map := DM.add dim (coef_to_c c) !map 
           in
           Apron.Linexpr1.iter iterator le;
@@ -267,7 +265,7 @@ module Make (C : Sigs.Coefficient) = struct
 
   let cntsr_to_z3 kind ctx c =
     let term_to_z3 dim coef = 
-      Z3.Arithmetic.mk_mul ctx [Z3.Arithmetic.Real.mk_numeral_s ctx (C.to_string_c coef); Z3.Arithmetic.Real.mk_const ctx (Z3.Symbol.mk_int ctx dim)]
+      Z3.Arithmetic.mk_mul ctx [Z3.Arithmetic.Real.mk_numeral_s ctx (C.to_string_c coef); Z3.Arithmetic.Real.mk_const ctx (Z3.Symbol.mk_int ctx (V.hash dim))]
     in
     let lhs = Z3.Arithmetic.mk_add ctx (DM.fold (fun dim coef acc -> (term_to_z3 dim coef) :: acc) (fst c) [Z3.Arithmetic.Real.mk_numeral_s ctx (C.to_string_c (snd c))]) in
     match kind with
@@ -338,18 +336,21 @@ module Make (C : Sigs.Coefficient) = struct
 
 
 
-  let get_poly_vars p = 
+  (*let get_poly_vars p = 
     match p with
-    | Bot -> BatSet.empty
+    | Bot -> V.S.empty
     | Ne poly ->
-      let folder cnstr set = BatSet.union (BatSet.of_enum (DM.keys (fst cnstr))) set in
-      S.fold folder poly.eqs (S.fold folder poly.non_strict (S.fold folder poly.strict BatSet.empty)) 
+      let folder cnstr set = V.S.union (DM.domain (fst cnstr)) set in
+      S.fold folder poly.eqs (S.fold folder poly.non_strict (S.fold folder poly.strict V.S.empty)) *)
 
   let z3_atom_to_polyhedron negate phi = 
     let rec z3_term_to_lterm t = 
       if Z3.Expr.is_const t then
-        let dim = Z3.Symbol.get_int (Z3.FuncDecl.get_name (Z3.Expr.get_func_decl t)) in
-        (DM.add dim C.one (empty_m), C.zero)
+        let name = Z3.FuncDecl.get_name (Z3.Expr.get_func_decl t) in
+        let v = if Z3.Symbol.is_int_symbol name then V.of_int (Z3.Symbol.get_int name)
+                else V.of_string (Z3.Symbol.get_string name)
+                in
+        (DM.add v C.one (empty_m), C.zero)
       else if Z3.Arithmetic.is_rat_numeral t then
         (empty_m, C.of_zarith_q (Z3.Arithmetic.Real.get_ratio t))
       else if Z3.Arithmetic.is_mul t then
@@ -359,8 +360,11 @@ module Make (C : Sigs.Coefficient) = struct
           let const_term = List.fold_left (fun acc e -> C.mulc (C.of_zarith_q (Z3.Arithmetic.Real.get_ratio e)) acc) C.one const in
           if var = [] then (empty_m, const_term)
           else
-            let dim = Z3.Symbol.get_int (Z3.FuncDecl.get_name (Z3.Expr.get_func_decl (List.hd var))) in
-            (DM.add dim const_term (empty_m), C.zero)
+            let name = Z3.FuncDecl.get_name (Z3.Expr.get_func_decl (List.hd var)) in
+            let v = if Z3.Symbol.is_int_symbol name then V.of_int (Z3.Symbol.get_int name)
+                else V.of_string (Z3.Symbol.get_string name)
+                in
+            (DM.add v const_term (empty_m), C.zero)
       else if Z3.Arithmetic.is_add t then
         let sub_terms = List.map z3_term_to_lterm (Z3.Expr.get_args t) in
         List.fold_left lt_add (List.hd sub_terms) (List.tl sub_terms)
@@ -388,7 +392,7 @@ module Make (C : Sigs.Coefficient) = struct
 
 
 
-  type vt = | MinusInf | Term of (C.coef DM.t * C.coef) | TermEp of (C.coef DM.t * C.coef)
+  type vt = | MinusInf | Term of (C.coef DM.map * C.coef) | TermEp of (C.coef DM.map * C.coef)
 
 
   (*let pp_cm f cm = 
@@ -506,11 +510,15 @@ module Make (C : Sigs.Coefficient) = struct
               | None -> failwith "Const has no interpretation in model"
               | Some e -> C.of_zarith_q (Z3.Arithmetic.Real.get_ratio e)
             in
-            DM.add (Z3.Symbol.get_int (Z3.FuncDecl.get_name fun_decl)) interp map) (empty_m) (Z3.Model.get_const_decls model)
+            let name = Z3.FuncDecl.get_name fun_decl in
+            let v = if Z3.Symbol.is_int_symbol name then V.of_int (Z3.Symbol.get_int name)
+                else V.of_string (Z3.Symbol.get_string name)
+                in
+            DM.add v interp map) (empty_m) (Z3.Model.get_const_decls model)
 
 
-  let local_project model project_dims p =
-    List.fold_left (project_dim (z3_model_to_dm model)) p project_dims
+  (*let local_project model project_dims p =
+    List.fold_left (project_dim (z3_model_to_dm model)) p project_dims*)
 
 
   (*let local_project model project_dims p =
@@ -586,7 +594,11 @@ module Make (C : Sigs.Coefficient) = struct
       if BatSet.mem (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts then seen_asts, consts
       else
         if Z3.Expr.is_const phi && (not (Z3.Boolean.is_true phi || Z3.Boolean.is_false phi)) then 
-          BatSet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts, BatSet.add ((Z3.Symbol.get_int % Z3.FuncDecl.get_name % Z3.Expr.get_func_decl) phi) consts
+          let name = Z3.FuncDecl.get_name (Z3.Expr.get_func_decl phi) in
+          let v = if Z3.Symbol.is_int_symbol name then V.of_int (Z3.Symbol.get_int name)
+                else V.of_string (Z3.Symbol.get_string name)
+                in
+          BatSet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts, V.S.add v consts
         else
           let children = Z3.Expr.get_args phi in
           if children = [] then BatSet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts, consts
@@ -594,13 +606,14 @@ module Make (C : Sigs.Coefficient) = struct
             let new_seen_asts, new_consts = List.fold_left (fun (pasts, pconsts) child -> aux child pasts pconsts) (seen_asts, consts) children in
             BatSet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) new_seen_asts, new_consts
     in
-    snd (aux form (BatSet.empty) (BatSet.empty))
+    snd (aux form (BatSet.empty) (V.S.empty))
 
-  let convex_hull ctx solver project_dims =
+  let convex_hull ctx solver =
     let form = Z3.Boolean.mk_and ctx (Z3.Solver.get_assertions solver) in
-    let hull_set = List.fold_left (fun s d -> BatSet.remove d s) (get_z3_consts form) project_dims in
-    let hull_vars = BatSet.elements hull_set in
-    let env = A.int_list_to_env hull_vars in
+    let form_vars = get_z3_consts form in
+    (*let hull_set = List.fold_left (fun s d -> BatSet.remove d s) (get_z3_consts form) project_dims in
+    let hull_vars = BatSet.elements hull_set in*)
+    let env = A.var_list_to_env (V.S.to_list form_vars) in
     (*let quantified_form = project_vars ctx form (List.map (Z3.Symbol.mk_int ctx) project_dims) in
     let tmp_solver = Z3.Solver.mk_simple_solver ctx in
     Z3.Solver.add tmp_solver [quantified_form];
@@ -620,8 +633,7 @@ module Make (C : Sigs.Coefficient) = struct
       | Z3.Solver.SATISFIABLE ->
         (let model = (match Z3.Solver.get_model solver with | None -> failwith "Unable to obtain model" | Some m -> m) in
         let implicant = generalize_model model form in
-        let proj_poly = local_project model project_dims implicant in
-        let apron = A.of_poly env proj_poly in
+        let apron = A.of_poly env implicant in
         let next = A.join polyhedron apron in
 
         (*(let m_proj = 
@@ -692,14 +704,18 @@ module Make (C : Sigs.Coefficient) = struct
     alpha_below (A.bottom env)
 
 
-  let find_cons ctx solver pot_cons (*biggest_flag_num*) = 
+  let find_cons ?(use_flags=true) ctx solver pot_cons (*biggest_flag_num*) = 
     Z3.Solver.push solver;
     let pot_cons_with_flags = List.mapi (fun i c -> (i, Z3.Boolean.mk_const_s ctx ("b" ^ (string_of_int (i(* + biggest_flag_num *)))), c)) pot_cons in
     (*let round_f = Z3.Boolean.mk_const_s ctx ("r" ^ (string_of_int biggest_flag_num)) in*)
     (*Z3.Solver.add solver [Z3.Boolean.mk_implies ctx round_f ( Z3.Boolean.mk_not ctx (Z3.Boolean.mk_and ctx (List.map (fun (_, b, c) -> Z3.Boolean.mk_implies ctx b c) pot_cons_with_flags))) ];*)
-    Z3.Solver.add solver [Z3.Boolean.mk_not ctx (Z3.Boolean.mk_and ctx (List.map (fun (_, b, c) -> Z3.Boolean.mk_implies ctx b c) pot_cons_with_flags))];
+    if use_flags then  Z3.Solver.add solver [Z3.Boolean.mk_not ctx (Z3.Boolean.mk_and ctx (List.map (fun (_, b, c) -> Z3.Boolean.mk_implies ctx b c) pot_cons_with_flags))];
     let rec aux cons_in_play cons_violated = 
-      let assumpts = List.concat (List.map (fun (_, clist) -> List.map (fun (_, b, _) -> Z3.Boolean.mk_not ctx b) clist) cons_violated) in
+      let assumpts = 
+        if use_flags then List.concat (List.map (fun (_, clist) -> List.map (fun (_, b, _) -> Z3.Boolean.mk_not ctx b) clist) cons_violated) 
+        else
+          [Z3.Boolean.mk_or ctx (List.map (fun (_, _, c) -> Z3.Boolean.mk_not ctx c) cons_in_play)]
+        in
       match Z3.Solver.check solver ((*round_f :: *)assumpts) with
       | Z3.Solver.UNKNOWN -> failwith "Error in z3 solver"
       | Z3.Solver.UNSATISFIABLE -> 
@@ -757,14 +773,14 @@ module Make (C : Sigs.Coefficient) = struct
     Log.log_line_s ~level:`trace "";*)
 
     let poly = Ne {eqs = S.of_list eqs; non_strict = S.of_list non_strict; strict = S.of_list strict} in
-    let form_vars = get_z3_consts form in
+    (*let form_vars = get_z3_consts form in
     let poly_vars = get_poly_vars poly in
-    let vars_to_project = BatSet.elements (BatSet.diff poly_vars form_vars) in
+    let vars_to_project = BatSet.elements (BatSet.diff poly_vars form_vars) in*)
     Z3.Solver.push solver;
     Z3.Solver.add solver [form];
     let eq_poly, non_strict_to_upgrade = discover_eqs ctx solver poly non_strict in
     Log.log_line_s ~level:`trace ("Extracted equations");
-    let hull = convex_hull ctx solver vars_to_project in
+    let hull = convex_hull ctx solver in
 
     Log.log_line_s ~level:`trace "Computed convex hull:";
     Log.log ~level:`trace pp (Some hull);

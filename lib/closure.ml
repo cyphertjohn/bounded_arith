@@ -11,8 +11,8 @@ module Make(P : Poly.Polynomial) = struct
     map: (string * poly) S.map;
     keep_map: bool S.map;
     eliminated_vars: poly S.map;
-    vars_to_keep: V.t list;
-    vars_to_remove: V.t list
+    vars_to_keep: V.v list;
+    vars_to_remove: V.v list
   }
 
   let create_order tbl ord a b = 
@@ -68,8 +68,8 @@ module Make(P : Poly.Polynomial) = struct
       | Var x -> 
         let xvar = V.of_string x in
         let keep = List.mem xvar c.vars_to_keep in
-        if keep || List.mem xvar removes then (from_var xvar, 1, keep, (top_order, p_map, V.Mi.add xvar 1 d_map, S.add xvar keep k_map, removes))
-        else (from_var xvar, 1, keep, (top_order, p_map, V.Mi.add xvar 1 d_map, S.add xvar keep k_map, xvar :: removes))
+        if keep || List.mem xvar removes then (from_var xvar, 1, keep, (top_order, p_map, V.M.add xvar 1 d_map, S.add xvar keep k_map, removes))
+        else (from_var xvar, 1, keep, (top_order, p_map, V.M.add xvar 1 d_map, S.add xvar keep k_map, xvar :: removes))
       | Add l ->
         let folder (sum, (top_o, pmap, dmap, kmap, rms)) ex = 
           let pure_ex, _, _, (top, m, d, k, r) = aux (top_o, pmap, dmap, kmap, rms) ex in
@@ -79,7 +79,7 @@ module Make(P : Poly.Polynomial) = struct
         let get_deg_and_keep (deg, keep) (_, mon) = 
           let mvars = get_vars_m mon in
           let get_mon_deg_and_keep v (mdeg, mkeep) = 
-            (mdeg + ((get_degree v mon) * (V.Mi.find v dmap)), mkeep && (S.find v kmap))
+            (mdeg + ((get_degree v mon) * (V.M.find v dmap)), mkeep && (S.find v kmap))
           in
           let mdeg, mkeep = V.S.fold get_mon_deg_and_keep mvars (0, true) in
           (max mdeg deg, mkeep && keep)
@@ -97,11 +97,11 @@ module Make(P : Poly.Polynomial) = struct
         let (pure_d, dd, dk, (ord, pmap, dmap, kmap, rms)) = aux (num_o, num_pmap, num_dmap, num_kmap, num_removes) d in
         let new_variable = V.fresh_var () in
         let new_var_poly = from_var new_variable in
-        (mul pure_n new_var_poly, nd + dd, nk && dk, (new_variable :: ord, S.add new_variable ("recip", pure_d) pmap, V.Mi.add new_variable dd dmap, S.add new_variable (nk && dk) kmap, rms))
+        (mul pure_n new_var_poly, nd + dd, nk && dk, (new_variable :: ord, S.add new_variable ("recip", pure_d) pmap, V.M.add new_variable dd dmap, S.add new_variable (nk && dk) kmap, rms))
       | Floor x -> 
         let (pure_x, xd, xk, (ord, pmap, dmap, kmap, rms)) = aux (top_order, p_map, d_map, k_map, removes) x in
         let new_variable = V.fresh_var () in
-        (from_var new_variable, xd, xk, (new_variable :: ord, S.add new_variable ("floor", pure_x) pmap, V.Mi.add new_variable xd dmap, S.add new_variable xk kmap, rms))
+        (from_var new_variable, xd, xk, (new_variable :: ord, S.add new_variable ("floor", pure_x) pmap, V.M.add new_variable xd dmap, S.add new_variable xk kmap, rms))
       | Pow (base, exp) ->
         let (pure_base, bd, bk, (ord, pmap, dmap, kmap, rms)) = aux (top_order, p_map, d_map, k_map, removes) base in
         if exp >= 0 then (exp_poly pure_base exp, bd * exp, bk, (ord, pmap, dmap, kmap, rms))
@@ -109,7 +109,7 @@ module Make(P : Poly.Polynomial) = struct
           let neg_exp = (-1) * exp in
           let new_variable = V.fresh_var () in
           let new_var_poly = from_var new_variable in
-          (exp_poly new_var_poly neg_exp, bd * neg_exp, bk, (new_variable :: ord, S.add new_variable ("recip", pure_base) pmap, V.Mi.add new_variable (bd * neg_exp) dmap, S.add new_variable bk kmap, rms))
+          (exp_poly new_var_poly neg_exp, bd * neg_exp, bk, (new_variable :: ord, S.add new_variable ("recip", pure_base) pmap, V.M.add new_variable (bd * neg_exp) dmap, S.add new_variable bk kmap, rms))
       in
     let res_poly, _, _, (top_ord, pmap, dmap, kmap, rms) = aux ([], c.map, old_dmap, old_kmap, vars_to_remove) ex in
     let new_to = List.rev (List.fold_left (fun acc v -> if List.mem v acc then acc else v :: acc) top_ord old_to) in
@@ -148,10 +148,10 @@ module Make(P : Poly.Polynomial) = struct
     let (avd, bvd) = V.S.fold (fun v l -> (v, get_degree v a) :: l) a_vars [], V.S.fold (fun v l -> (v, get_degree v b) :: l) b_vars [] in
     let folder (rem_deg, keep_deg) (v, d) = 
       if S.find v keep_map then 
-        if V.Mi.mem v deg_map then (rem_deg, keep_deg + d * (V.Mi.find v deg_map))
+        if V.M.mem v deg_map then (rem_deg, keep_deg + d * (V.M.find v deg_map))
         else (rem_deg, keep_deg + d)
       else
-        if V.Mi.mem v deg_map then (rem_deg + d * (V.Mi.find v deg_map), keep_deg)
+        if V.M.mem v deg_map then (rem_deg + d * (V.M.find v deg_map), keep_deg)
         else (rem_deg + d, keep_deg)
     in
     let (a_deg, b_deg) = (List.fold_left folder (0, 0) avd, List.fold_left folder (0, 0) bvd) in
@@ -209,13 +209,13 @@ module Make(P : Poly.Polynomial) = struct
   let compute_deg_and_keep map vars_to_keep = 
     let folder v _ (dmap, kmap, topo) =
       let rec process_var va dm km topo =         
-        if V.Mi.mem va dm then (V.Mi.find va dm, S.find va km, dm, km, topo)
+        if V.M.mem va dm then (V.M.find va dm, S.find va km, dm, km, topo)
         else if not (S.mem va map) then 
-          let keep = List.mem va vars_to_keep in (1, keep, V.Mi.add va 1 dm, S.add va keep km, topo)
+          let keep = List.mem va vars_to_keep in (1, keep, V.M.add va 1 dm, S.add va keep km, topo)
         else
           let (_, p) = S.find va map in
           let (pd, keep, new_dm, new_km, new_topo) = process_poly p dm km topo in
-          (pd, keep, V.Mi.add va pd new_dm, S.add va keep new_km, va :: new_topo)
+          (pd, keep, V.M.add va pd new_dm, S.add va keep new_km, va :: new_topo)
       and process_mon mon dm km topo = 
         let mon_vars = get_vars_m mon in
         let collect_vars va (deg, keep, dmacc, kmacc, topoacc) = 
@@ -234,7 +234,7 @@ module Make(P : Poly.Polynomial) = struct
       let (_, _, new_dm, new_km, new_topo) = process_var v dmap kmap topo in
       (new_dm, new_km, new_topo)
     in
-    let (dmap, kmap, topo) = S.fold folder map (V.Mi.empty, S.empty, []) in
+    let (dmap, kmap, topo) = S.fold folder map (V.M.empty, S.empty, []) in
     (dmap, kmap, List.rev topo)
       
 
@@ -328,10 +328,10 @@ module Make(P : Poly.Polynomial) = struct
         let eliminated = V.S.fold (fun v stable_map -> snd (reduce_modify (from_var v) eliminated stable_map c.ideal)) (V.S.diff (S.domain eliminated) (S.domain stable_emap)) stable_emap in
         let new_generators = List.map (fun p -> reduce_only_map p eliminated) (I.get_generators c.ideal) in
         let new_d_map, new_k_map, top_ord = compute_deg_and_keep map c.vars_to_keep in
-        let new_d_map, new_k_map = List.fold_left (fun (dm, km) v -> V.Mi.add v 1 dm, S.add v false km) (new_d_map, new_k_map) vars_still_to_remove in
+        let new_d_map, new_k_map = List.fold_left (fun (dm, km) v -> V.M.add v 1 dm, S.add v false km) (new_d_map, new_k_map) vars_still_to_remove in
         let new_d_map, new_k_map = 
           List.fold_left (fun (dm, km) v -> 
-            if not (S.mem v eliminated) && not (V.Mi.mem v dm) then V.Mi.add v 1 dm, S.add v true km
+            if not (S.mem v eliminated) && not (V.M.mem v dm) then V.M.add v 1 dm, S.add v true km
             else dm, km) 
             (new_d_map, new_k_map) 
             c.vars_to_keep 
@@ -378,14 +378,14 @@ module Make(P : Poly.Polynomial) = struct
     
 
   let make ?use_fgb:(fgb=true) eqs exprs vars_to_keep = 
-    let empty = if fgb then {ideal = I.make_ideal_f V.Mi.empty V.M.empty [] []; map = S.empty; keep_map = S.empty; eliminated_vars = S.empty; vars_to_keep = vars_to_keep; vars_to_remove = []} 
+    let empty = if fgb then {ideal = I.make_ideal_f V.M.empty V.M.empty [] []; map = S.empty; keep_map = S.empty; eliminated_vars = S.empty; vars_to_keep = vars_to_keep; vars_to_remove = []} 
                 else {ideal = I.make_ideal lex_ord []; map = S.empty; keep_map = S.empty; eliminated_vars = S.empty; vars_to_keep = vars_to_keep; vars_to_remove = []}
     in
     let purify_all_exprs (pes, cl, top, dm, km, rms) ex = 
       let (pure_ex, new_cl, new_to, new_dm, new_km, new_rms) = purify ex cl top dm km rms in
       pure_ex :: pes, new_cl, new_to, new_dm, new_km, new_rms
     in
-    let pure_exprs_rev, c, top, dm, km, rms = List.fold_left purify_all_exprs ([], empty, [], V.Mi.empty, S.empty, []) (eqs @ exprs) in
+    let pure_exprs_rev, c, top, dm, km, rms = List.fold_left purify_all_exprs ([], empty, [], V.M.empty, S.empty, []) (eqs @ exprs) in
     let (_, given_eqs, pure_exprs) = List.fold_left (fun (i, es, exs) ex -> if i < List.length exprs then (i + 1, es, ex :: exs) else (i+1, ex :: es, exs)) (0, [], []) pure_exprs_rev in
     let eqs = (instantiate_eqs c) @ given_eqs in
     let new_ideal = match I.get_implementation c.ideal with

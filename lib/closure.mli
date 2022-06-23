@@ -7,7 +7,7 @@ module Make(P : Poly.Polynomial) : ( sig
 
   type closure
 
-  val make : ?use_fgb:bool -> P.C.coef Sigs.Expr.expr list -> P.C.coef Sigs.Expr.expr list -> P.V.t list -> closure * poly list
+  val make : ?use_fgb:bool -> P.C.coef Sigs.Expr.expr list -> P.C.coef Sigs.Expr.expr list -> P.V.v list -> closure * poly list
 
   val add_eqs : poly list -> closure -> closure
 

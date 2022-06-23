@@ -13,7 +13,7 @@ module Make (P : Poly.Polynomial) : (
 
     val reduce : poly -> ideal -> poly * bool
 
-    val make_ideal_f : P.V.Mi.map -> bool P.V.M.map -> (int * P.V.t) list -> poly list -> ideal
+    val make_ideal_f : int P.V.M.map -> bool P.V.M.map -> (int * P.V.v) list -> poly list -> ideal
 
     val make_ideal : (monic_mon -> monic_mon -> int) -> poly list -> ideal
 

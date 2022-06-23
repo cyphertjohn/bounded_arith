@@ -12,7 +12,7 @@ module Make (P : Poly.Polynomial) = struct
 
   type impl = 
     | Buch
-    | Fgb of (V.Mi.map) * (bool V.M.map) * ((int * P.V.t) list)
+    | Fgb of (int V.M.map) * (bool V.M.map) * ((int * P.V.v) list)
 
   type ideal = {
     basis: generators;
@@ -168,7 +168,7 @@ module Make (P : Poly.Polynomial) = struct
     try BatHashtbl.find hashtbl (m1, m2) 
     with Not_found ->
       let res = 
-        let effective_deg v = try V.Mi.find v deg_map with Not_found -> 1 in
+        let effective_deg v = try V.M.find v deg_map with Not_found -> 1 in
         let m1d_bk_1 = List.map (fun v -> effective_deg v * get_degree v m1) bk1 in
         let m2d_bk_1 = List.map (fun v -> effective_deg v * get_degree v m2) bk1 in
         let m1bk1tot, m2bk1tot = List.fold_left (+) 0 m1d_bk_1, List.fold_left (+) 0 m2d_bk_1 in
@@ -239,7 +239,7 @@ module Make (P : Poly.Polynomial) = struct
     in
     let var_ord_bk_1, var_ord_bk_2 = (List.rev (List.sort cmp_var discard_vars)), (List.rev (List.sort cmp_var keep_vars)) in
     let folder (svar_ord, svar_to_pvar_e, polys) pvar = 
-      let pedeg = try V.Mi.find pvar deg_map with Not_found -> 1 in
+      let pedeg = try V.M.find pvar deg_map with Not_found -> 1 in
       let svar = V.fresh_var () in
       let svar_edeg = from_var_pow svar pedeg in
       let sub_ps = List.map (substitute (pvar, svar_edeg)) polys in

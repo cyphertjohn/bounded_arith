@@ -5,7 +5,7 @@ module CongQ = Closure.Make(PolyQ)
 
 (** Compute an upper bound for t over the variables in vars_to_keep,
     provided the equalities tx = 0 for all tx in terms. *)
-let rewrite ?sat:(sat=3) ?(compute_hull=true) ?fgb:(fgb=true) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_to_keep (ts : Expr.qexpr list) = 
+let rewrite ?sat:(sat=3) ?(compute_hull=false) ?fgb:(fgb=true) (eqs : Expr.qexpr list) (ineqs : Expr.qexpr list) vars_to_keep (ts : Expr.qexpr list) = 
   let cl, pure_polys = CongQ.make ~use_fgb:fgb eqs (ts @ ineqs) (List.map Sigs.V.of_string vars_to_keep) in
   Log.log_line_s ~level:`debug "Initial Closure map";
   Log.log ~level:`debug CongQ.pp_c (Some cl);
@@ -24,3 +24,15 @@ let rewrite ?sat:(sat=3) ?(compute_hull=true) ?fgb:(fgb=true) (eqs : Expr.qexpr 
   let sorted_bounds = List.sort (fun (i, _) (j, _) -> compare i j) rewritten_ts in
   let unpurify_bounds bs = List.map (fun b -> Expr.simplify (CongQ.unpurify b cl)) bs in
   List.map (fun (_, (ups, lows)) -> unpurify_bounds ups, unpurify_bounds lows) sorted_bounds
+
+
+
+(*
+module P = Polyhedron.Make(Sigs.Q)(Sigs.V)
+
+let rewrite_linear smt vars_to_keep (ts : Expr.qexpr list) = 
+  let ctx = Z3.mk_context [] in
+  let form = Z3.Boolean.mk_and ctx (Z3.AST.ASTVector.to_expr_list (Z3.SMT.parse_smtlib2_file ctx smt [] [] [] [])) in
+  
+  let p = P.convex_hull ctx 
+  *)

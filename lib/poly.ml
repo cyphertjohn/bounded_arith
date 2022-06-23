@@ -28,13 +28,13 @@ module type Polynomial = sig
 
   val make_mon_from_coef : C.coef -> mon
 
-  val make_mon_from_var : V.t -> int -> mon
+  val make_mon_from_var : V.v -> int -> mon
 
-  val make_mon_from_faugere_mon : V.t list -> Z.t * int list -> mon
+  val make_mon_from_faugere_mon : V.v list -> Z.t * int list -> mon
 
   val get_mons : poly -> mon list
 
-  val get_degree : V.t -> monic_mon -> int
+  val get_degree : V.v -> monic_mon -> int
 
   val get_vars_m : monic_mon -> V.S.set
   
@@ -60,7 +60,7 @@ module type Polynomial = sig
   val exp_poly : poly -> int -> poly
 
   val substitute :
-    V.t * poly -> poly -> poly
+    V.v * poly -> poly -> poly
 
   val is_zero : poly -> bool
 
@@ -72,13 +72,13 @@ module type Polynomial = sig
 
   val equal : poly -> poly -> bool
 
-  val from_var : V.t -> poly
+  val from_var : V.v -> poly
 
   val from_var_s : string -> poly
 
   val from_const_s : string -> poly
 
-  val from_var_pow : V.t -> int -> poly
+  val from_var_pow : V.v -> int -> poly
 
   val from_var_s_pow : string -> int -> poly
 

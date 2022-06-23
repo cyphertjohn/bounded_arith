@@ -1,13 +1,13 @@
 
 module MakeMon (C : Sigs.Coefficient) (V : Sigs.Var) = struct
 
-  type var = V.t
+  type var = V.v
 
   type varset = V.S.set
 
-  type pre_monic = (V.t * int) list
+  type pre_monic = (V.v * int) list
 
-  let pre_monic_to_deg_map : pre_monic -> V.Mi.map = List.fold_left (fun degmap (v, d) -> V.Mi.add v d degmap) (V.Mi.empty)
+  let pre_monic_to_deg_map : pre_monic -> int V.M.map = List.fold_left (fun degmap (v, d) -> V.M.add v d degmap) (V.M.empty)
 
   let mon_to_dim = BatHashtbl.create 100
   let dim_to_mon = BatHashtbl.create 100
@@ -137,11 +137,11 @@ module MakeMon (C : Sigs.Coefficient) (V : Sigs.Var) = struct
     get_dim (aux (get_mon a) (get_mon b) [])
 
   let degree v (m : monic_mon) : int = 
-    try V.Mi.find v (snd (BatHashtbl.find dim_to_mon m))
+    try V.M.find v (snd (BatHashtbl.find dim_to_mon m))
     with Not_found -> 0
 
   let get_vars (m : monic_mon) = 
-    V.Mi.domain (snd (BatHashtbl.find dim_to_mon m))
+    V.M.domain (snd (BatHashtbl.find dim_to_mon m))
 
   let monic_mon_to_string (m : monic_mon) = 
     let folder acc (v, e) = 
@@ -269,7 +269,7 @@ module Make ( Co : Sigs.Coefficient) ( Va : Sigs.Var) = struct
   let negate (p : poly) : poly = 
     {p with mons = BatHashtbl.map (fun _ c -> C.mulc c (C.from_string_c "-1")) p.mons}
 
-  let get_degree : V.t -> M.monic_mon -> int = M.degree
+  let get_degree : V.v -> M.monic_mon -> int = M.degree
 
   let get_vars_m : monic_mon -> V.S.set = M.get_vars
 

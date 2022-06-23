@@ -5,6 +5,24 @@ module Make(P : Poly.Polynomial) = struct
   module Cl = Closure.Make(P)
   include P
   
+  module MS = struct
+    type set = BatISet.t include BatISet 
+    
+    let add v s = BatISet.add (mon_to_id v) s
+      
+    let mem v s = BatISet.mem (mon_to_id v) s
+
+    let fold f s = BatISet.fold (fun a b -> f (id_to_mon a) b) s
+
+    let to_list s = List.map id_to_mon (BatISet.elements s)
+  end
+
+  module MM = struct
+    module B = BatMap.Make(struct type t = monic_mon let compare a b= Int.compare (mon_to_id a) (mon_to_id b) end)
+    type 'a map = 'a B.t
+    include B
+    let domain m = BatEnum.fold (fun s (a, _) -> MS.add a s) MS.empty (B.enum m)
+  end
 
   module IM = BatMap.Make(Int)
 
@@ -32,7 +50,7 @@ module Make(P : Poly.Polynomial) = struct
       depth : int;
       closure : Cl.closure;
       curr_poly : int;
-      ineqs : ((C.coef IM.t) * justification) IM.t;
+      ineqs : ((C.coef MM.map) * justification) IM.t;
       ineqs_prod : int list list list
     }
 
@@ -44,12 +62,12 @@ module Make(P : Poly.Polynomial) = struct
     let mons = get_mons p in
     if mons = [] then
       let (zero, zero_monic) = zero_mon in
-      IM.singleton (mon_to_id zero_monic) zero
+      MM.singleton (zero_monic) zero
     else
-      List.fold_left (fun map (coe, monic) -> IM.add (mon_to_id monic) coe map) IM.empty mons
+      List.fold_left (fun map (coe, monic) -> MM.add monic coe map) MM.empty mons
 
   let dim_to_poly dim_map = 
-    from_mon_list (IM.fold (fun dim coe l -> (coe, id_to_mon dim) :: l) dim_map [])
+    from_mon_list (MM.fold (fun dim coe l -> (coe, dim) :: l) dim_map [])
 
   (*let get_eq_basis c = I.get_generators c.ideal*)
 
@@ -315,15 +333,41 @@ module Make(P : Poly.Polynomial) = struct
     Z3.Expr.simplify (Z3.Quantifier.expr_of_quantifier quant) None*)*)
 
 
-  module P = Polyhedron.Make(C)
 
 
-  let const_dim = mon_to_id (snd (make_mon_from_coef (C.zero)))
+  module P = Polyhedron.Make(C)(struct
+    type v = monic_mon
+
+    let of_string s = 
+      try id_to_mon (int_of_string s)
+      with Failure _ -> failwith ("can't convert string to mon")
+
+    let fresh_var i = id_to_mon (fresh_dim i)
+
+    let to_string i = string_of_int (mon_to_id i)
+
+    let equal = (=)
+
+    let compare a b = Int.compare (mon_to_id a) (mon_to_id b)
+
+    let hash x = mon_to_id x
+
+    let of_int x = id_to_mon x
+
+    module S = MS
+
+    module M = MM
+
+  end
+  )
+
+
+  let const_dim = snd (make_mon_from_coef (C.zero))
 
   let extract_const coef_map = 
     try 
-      let const = IM.find const_dim coef_map in
-      (IM.remove const_dim coef_map, const)
+      let const = MM.find const_dim coef_map in
+      (MM.remove const_dim coef_map, const)
     with Not_found -> coef_map, C.zero
 
   let saturate comp_hull (c : cone) (impls : impl list) =
@@ -362,7 +406,7 @@ module Make(P : Poly.Polynomial) = struct
             fun (con, unadded_ineqs) (ineq_to_add_m, ineq_to_add_c) -> 
               let dim_map = 
                 if C.cmp ineq_to_add_c C.zero = 0 then ineq_to_add_m
-                else IM.add const_dim ineq_to_add_c ineq_to_add_m in
+                else MM.add const_dim ineq_to_add_c ineq_to_add_m in
               let ineq_poly = dim_to_poly dim_map in
               let new_c, added = add_ineq con ineq_poly Given in 
               let (_, non_lin) = match added with | [] -> failwith "Added no ineqs?" | x :: xs -> x, xs in
@@ -606,18 +650,18 @@ module Make(P : Poly.Polynomial) = struct
 
 
   let i_reduce_proj p c = 
-    let bigD = fresh_dim () in
+    let bigD = id_to_mon (fresh_dim ()) in
     let ineqs = c.ineqs in
     let p_ired_m = extract_const (poly_to_dim p) in
-    let all_dims = IM.fold (fun _ (poly, _) dim_set -> BatSet.union (BatSet.of_enum (IM.keys poly)) dim_set) ineqs BatSet.empty in
-    let sorted_dims = List.rev (List.sort (fun i j -> Cl.get_ord c.closure (id_to_mon i) (id_to_mon j)) (BatSet.elements all_dims)) in
+    let all_dims = IM.fold (fun _ (poly, _) dim_set -> MS.union (MM.domain poly) dim_set) ineqs MS.empty in
+    let sorted_dims = List.rev (List.sort (fun i j -> Cl.get_ord c.closure i j) (MS.to_list all_dims)) in
     let solver = Z3.Solver.mk_simple_solver c.z3ctx in
     let ineqs_ex = IM.fold (fun _ (pol, _) ineqs -> extract_const pol :: ineqs) ineqs [] in
     let z3_ineqs = List.map (P.cntsr_to_z3 `ge c.z3ctx) ineqs_ex in
     let polyhedron = List.fold_left (P.add_cnstr `ge) P.top_p ineqs_ex in
     Z3.Solver.add solver z3_ineqs;
     let (uppers, lowers) = P.optimize_t_by_project p_ired_m bigD sorted_dims polyhedron c.z3ctx solver in
-    let bounds_to_polys c = dim_to_poly (IM.add const_dim (snd c) (fst c)) in
+    let bounds_to_polys c = dim_to_poly (MM.add const_dim (snd c) (fst c)) in
     List.map bounds_to_polys uppers, List.map bounds_to_polys lowers
      
 
@@ -646,7 +690,7 @@ module Make(P : Poly.Polynomial) = struct
     (*normalize unnormal_c*)
     unnormal_c*)
 
-  let make_cone_cl ?(sat = 1) ?(ineqs = []) ?(impls = []) ?(hull = true) cl = 
+  let make_cone_cl ?(sat = 1) ?(ineqs = []) ?(impls = []) ?(hull = false) cl = 
     let ineqs = ineqs @ (Cl.instantiate_ineqs cl) in
     let impls = impls @ (Cl.instantiate_impls cl) in
     let red_add_ine co ine = 

@@ -50,44 +50,53 @@ module Q : Coefficient = struct
 end
 
 module type Var = sig
-    type t
+    type v
     
-    val of_string : string -> t
+    val of_string : string -> v
 
-    val fresh_var : unit -> t
+    val fresh_var : unit -> v
 
-    val to_string : t -> string
+    val to_string : v -> string
 
-    val equal : t -> t -> bool
+    val equal : v -> v -> bool
 
-    val compare : t -> t -> int
+    val compare : v -> v -> int
 
-    val hash : t -> int
+    val hash : v -> int
+
+    val of_int : int -> v
 
     module S : sig
       type set
       val empty : set
 
-      val add : t -> set -> set
+      val add : v -> set -> set
 
       val union : set -> set -> set
 
-      val mem : t -> set -> bool
+      val mem : v -> set -> bool
 
       val diff : set -> set -> set
 
-      val fold : (t  -> 'a -> 'a) -> set -> 'a -> 'a
+      val fold : (v  -> 'a -> 'a) -> set -> 'a -> 'a
+
+      val to_list : set -> v list
     end
 
     module M : sig
-      type 'a map
-      val empty : 'a map
+      type +! 'a map
+
+      include BatMap.S with type key = v and type +!'a t ='a map
+      
+      val domain : 'a map -> S.set
+      
+      (*val empty : 'a map
 
       val is_empty : 'a map -> bool
 
-      val add : t -> 'a -> 'a map -> 'a map
+      val add : v -> 'a -> 'a map -> 'a map
 
-      val find : t -> 'a map -> 'a
+      val find : v -> 'a map -> 'a
 
       val bindings : 'a map -> (t * 'a) list
 
@@ -101,10 +110,10 @@ module type Var = sig
 
       val merge : (t -> 'a option -> 'b option -> 'c option) -> 'a map -> 'b map -> 'c map
 
-      val domain : 'a map -> S.set
+      val domain : 'a map -> S.set*)
     end
 
-    module Mi : sig
+    (*module Mi : sig
       type map
       val empty : map
 
@@ -123,7 +132,7 @@ module type Var = sig
       val modify_def : int -> t -> (int -> int) -> map -> map
 
       val domain : map -> S.set
-    end
+    end*)
 end
 
 module V : Var = struct
@@ -132,9 +141,9 @@ module V : Var = struct
   let dummy_vars = ref BatISet.empty
 
   let curr_num = ref 0
-  type t = int
+  type v = int
 
-  let of_string (s : string) : t = 
+  let of_string (s : string) : v = 
     try BatHashtbl.find string_to_int s
     with Not_found ->
       BatHashtbl.add int_to_string !curr_num s;
@@ -159,7 +168,13 @@ module V : Var = struct
 
   let hash i = i
 
-  module S = struct type set = BatISet.t include BatISet end
+  let of_int i = i
+
+  module S = struct 
+    type set = BatISet.t include BatISet 
+    
+    let to_list = BatISet.elements
+    end
 
   module M = struct 
     module B = BatMap.Make(struct type t = int let compare = compare end)
@@ -168,14 +183,14 @@ module V : Var = struct
     let domain m = BatISet.of_enum (BatEnum.map (fun (a, _) -> (a, a)) (B.enum m))
   end
 
-  module Mi = struct 
+  (*module Mi = struct 
     type map = int BatIMap.t 
     include BatIMap 
     let empty = BatIMap.empty ~eq:(=)
     (*let bindings m = 
       let dset = BatIMap.domain m in
       BatISet.fold (fun v acc -> (v, BatIMap.find v m) :: acc) dset []*)
-  end
+  end*)
 
 end
 
