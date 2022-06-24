@@ -1060,14 +1060,14 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
         | Some (ups, lows, smaller_poly) -> Some(ups, lows, meet smaller_poly curr_poly)
         )
     in*)
-    (*let env = A.int_list_to_env (fresh_dim :: dims_in_ord) in*)
+    (*let env = A.var_list_to_env (fresh_dim :: dims_in_ord) in*)
     let rec find_optimal_real_bound (uppers, lowers) (searched_uppers, searched_lowers) = 
-      if not (S.is_empty uppers) && not (S.is_empty lowers) then (S.to_list uppers, S.to_list lowers)
-      else
+      (*if not (S.is_empty uppers) && not (S.is_empty lowers) then (S.to_list uppers, S.to_list lowers)
+      else*)
         let dont_search = 
-          if S.is_empty uppers && S.is_empty lowers then Z3.Boolean.mk_or ctx [Z3.Boolean.mk_and ctx searched_lowers; Z3.Boolean.mk_and ctx searched_uppers]
-          else if S.is_empty uppers then Z3.Boolean.mk_and ctx searched_uppers
-          else Z3.Boolean.mk_and ctx searched_lowers in
+          (*if S.is_empty uppers && S.is_empty lowers then*) Z3.Boolean.mk_or ctx [Z3.Boolean.mk_and ctx searched_lowers; Z3.Boolean.mk_and ctx searched_uppers]
+          (*else if S.is_empty uppers then Z3.Boolean.mk_and ctx searched_uppers
+          else Z3.Boolean.mk_and ctx searched_lowers*) in
         (*let poly = A.to_poly curr_explored in*)
         (*Z3.Solver.add solver [Z3.Boolean.mk_not ctx (poly_to_z3 ctx poly)];*)
         match Z3.Solver.check solver [dont_search] with
@@ -1086,10 +1086,15 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
                 (*let p = A.to_poly (A.of_poly env p) in*)
                 Log.log_line_s ~level:`trace "Conjectured bounds";
                 Log.log ~level:`trace pp (Some p);
-                let (real_uppers, real_lowers, unreal_uppers, unreal_lowers) = check_bounds ctx fresh_dim t solver p in
-                let next_unreal_uppers = List.map (Z3.Boolean.mk_not ctx) unreal_uppers @ searched_uppers in
-                let next_unreal_lowers = List.map (Z3.Boolean.mk_not ctx) unreal_lowers @ searched_lowers in
-                find_optimal_real_bound (S.union real_uppers uppers, S.union real_lowers lowers) (next_unreal_uppers, next_unreal_lowers))
+                (*let (real_uppers, real_lowers, unreal_uppers, unreal_lowers) = check_bounds ctx fresh_dim t solver p in*)
+                let (pot_uppers, pot_lowers) = extract_bounds fresh_dim p in
+                let mk_z3_upper u = cntsr_to_z3 `ge ctx ((DM.add fresh_dim (C.from_string_c "-1") (fst u)), (snd u)) in
+                let mk_z3_lower l = 
+                  let neg_l = lt_negate l in
+                  cntsr_to_z3 `ge ctx (DM.add fresh_dim (C.one) ((fst neg_l)), (snd neg_l)) in
+                let next_unreal_uppers = List.map (fun u -> Z3.Boolean.mk_not ctx (mk_z3_upper u)) (S.to_list pot_uppers) @ searched_uppers in
+                let next_unreal_lowers = List.map (fun l -> Z3.Boolean.mk_not ctx (mk_z3_lower l)) (S.to_list pot_lowers) @ searched_lowers in
+                find_optimal_real_bound (S.union pot_uppers uppers, S.union pot_lowers lowers) (next_unreal_uppers, next_unreal_lowers))
     in
 
 
@@ -1144,5 +1149,40 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
               find_optimal_real_bound (S.union real_uppers found_uppers, S.union real_lowers found_lowers) (smallest_poly :: areas_expored)            
           )
     in*)
-    find_optimal_real_bound (S.empty, S.empty) ([Z3.Boolean.mk_true ctx], [Z3.Boolean.mk_true ctx])
+    let bounds = find_optimal_real_bound (S.empty, S.empty) ([Z3.Boolean.mk_true ctx], [Z3.Boolean.mk_true ctx]) in
+    let p_bound = 
+      List.fold_left (fun p u -> add_cnstr `ge p (DM.add fresh_dim (C.from_string_c "-1") (fst u), snd u)) 
+        (List.fold_left (fun p l -> let l_neg = lt_negate l in let lb = DM.add fresh_dim C.one (fst l_neg), snd l_neg in add_cnstr `ge p lb) top_p (snd bounds)) (fst bounds) in
+    let (real_uppers, real_lowers, _, _) = check_bounds ctx fresh_dim t solver p_bound in
+    let (real_uppers_l, real_lowers_l) = (S.to_list real_uppers, S.to_list real_lowers) in
+    let ups = 
+      if List.exists (DM.is_empty % fst) real_uppers_l then 
+        let min_const, others = 
+          List.fold_left (fun (mini, bs) (m, b) -> 
+          if DM.is_empty m then
+            match mini with
+            | None -> (Some b, bs)
+            | Some minim when C.cmp minim b < 0 -> (Some minim, bs)
+            | _ -> (Some b, bs)
+          else 
+            (mini, (m,b) :: bs)) (None, []) real_uppers_l in
+        match min_const with | None -> others | Some m -> (DM.empty, m) :: others
+      else real_uppers_l
+    in
+
+    let lows = 
+      if List.exists (DM.is_empty % fst) real_lowers_l then 
+        let max_const, others = 
+          List.fold_left (fun (maxi, bs) (m, b) -> 
+          if DM.is_empty m then
+            match maxi with
+            | None -> (Some b, bs)
+            | Some maxim when C.cmp b maxim < 0 -> (Some maxim, bs)
+            | _ -> (Some b, bs)
+          else 
+            (maxi, (m,b) :: bs)) (None, []) real_lowers_l in
+        match max_const with | None -> others | Some m -> (DM.empty, m) :: others
+      else real_lowers_l
+    in
+    ups, lows
 end
