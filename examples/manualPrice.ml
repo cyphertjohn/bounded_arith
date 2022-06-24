@@ -17,7 +17,8 @@ let compute_hull = SymBoundBenchmark.compute_hull ()
 let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:sat_bound ~compute_hull:compute_hull [t1;t2;t3] 
 									  [from_string "startPrice - minimumPrice";
 									  	from_string "endTime - startTime";
-									  	from_string "t1 - startTime";]
+									  	from_string "t1 - startTime";
+									  	from_string "endTime - t1"]
 									  vars_to_keep)
 									  [(from_string "price1")]
 

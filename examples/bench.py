@@ -16,7 +16,7 @@ BENCHMARKS = [
 	("elastic", [r"upper \& lower", "5", "3", "382", "362"], ["\\checkmark"]),
 	("fixedPointIntMulDiv", [r"upper \& lower", "0", "2", "362", "452"], ["\\checkmark"]),
 	("fixedPointIntDivMul", [r"upper \& lower", "0", "2", "362", "452"], ["\\checkmark"]),
-	("manualPrice", [r"upper \& lower", "3", "3", "223", "216"], ["\\checkmark"]),
+	("manualPrice", [r"upper \& lower", "3", "4", "223", "216"], ["\\checkmark"]),
 	("manualPriceMonotone", [r"monotonicity", "6", "5", "223", "216"], ["\\checkmark"]),
 	(NIRN_NAME, [r"upper", "10", "5", "1196", "2297"], ["\\checkmark"]), # TODO: resurrect (commented out because slow)
 	("tokent", [r"upper \& lower", "10", "4", "244", "558"], ["\\checkmark"]),
