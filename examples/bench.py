@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 import typing
 import statistics
+import matplotlib.pyplot as plt
 
 EXAMPLES_BIN_DIR = "."
 NUM_RUNS = 3
@@ -48,6 +49,11 @@ BASIC_TABLE_TAIL_LATEX = r"""\end{tabular}
 \end{table}
 """
 
+SATURATION_SCALABILITY_MAX_BOUND = 10
+SCALABILITY_TIMEOUT_SECONDS = 60
+
+OUTPUT_SATURATION_SCALABILITY_PLOT_PATH = "saturation_scalability.png"
+
 global logger
 
 @dataclass
@@ -70,13 +76,14 @@ def set_logger():
 	global logger
 	logger = logging.getLogger(__name__)
 
-def execute_benchmark(bench_config):
+def execute_benchmark(bench_config, timeout=None):
 	(bench_name, saturation_bound, use_convex) = bench_config
 
 	convex_config = ["-hull"] if use_convex else []
 	logger.info("Executing %s. Saturation bound: %d. Use convex: %r" % (bench_name, saturation_bound, use_convex) )
 	completed = subprocess.run(["%s/%s.exe" % (EXAMPLES_BIN_DIR,bench_name), "-sat", str(saturation_bound)] + convex_config,
-							  capture_output=True)
+							  capture_output=True,
+							  timeout=timeout)
 	process_output = completed.stdout
 	process_stderr = completed.stderr
 	logger.info("%s terminated with output: %s" % (str(bench_config), process_output))
@@ -95,8 +102,8 @@ def get_time_by_keyword(kwrd, output):
 		assert False
 	return float(match.group(1))
 
-def execute_and_summarize(bench_config):
-	output = execute_benchmark(bench_config)
+def execute_and_summarize(bench_config, timeout=None):
+	output = execute_benchmark(bench_config, timeout=timeout)
 	prod_sat_time = get_time_by_keyword(r"prod sat", output)
 	nimpl_sat_time = get_time_by_keyword(r"nimpl sat", output)
 	reduce_eq_time = get_time_by_keyword(r"reduce eq", output)
@@ -110,9 +117,9 @@ def execute_and_summarize(bench_config):
 
 	return ExperimentSummary(bench_config, 1, csat_time, reduce_time, total_time)
 
-def multiple_runs_and_summarize(bench_config, num_runs):
+def multiple_runs_and_summarize(bench_config, num_runs, timeout=None):
 	assert num_runs >= 1
-	summaries = [execute_and_summarize(bench_config) for _ in range(num_runs)]
+	summaries = [execute_and_summarize(bench_config, timeout=timeout) for _ in range(num_runs)]
 	return ExperimentSummary(bench_config, 
 							num_runs, 
 							statistics.mean(s.csat_time for s in summaries),
@@ -123,7 +130,7 @@ def time_to_str(t):
 	return str(round(t, 1))
 
 def bench_basic_table(also_nirn=True):
-	logger.info("Start bench")
+	logger.info("Start bench basic table")
 
 	with open(OUTPUT_BASIC_TABLE_PATH, "wt") as f:
 
@@ -158,11 +165,48 @@ def bench_basic_table(also_nirn=True):
 
 		f.write(BASIC_TABLE_TAIL_LATEX)
 
-	logger.info("End bench")
+	logger.info("End bench basic table")
+
+def bench_saturation_depth_scalability(also_nirn=True):
+	logger.info("Start bench basic table")
+
+	full_x_data = list(range(1, SATURATION_SCALABILITY_MAX_BOUND + 1))
+
+	for bench_name, aux_data_pre, aux_data_post in BENCHMARKS:
+		if (not also_nirn) and bench_name == NIRN_NAME:
+			continue
+
+		x_data = []
+		y_data = []
+
+		for i in full_x_data:
+			saturation_bound = i
+			use_convex = False
+			bench_config = (bench_name, saturation_bound, use_convex)
+
+			try:
+				res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS, timeout=SCALABILITY_TIMEOUT_SECONDS)
+				logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config, res_summary))
+
+				x_data.append(i)
+				y_data.append(res_summary.total_time)
+
+			except subprocess.TimeoutExpired:
+				logger.info("Got timeout on %s" % str(bench_config))
+
+
+		plt.plot(x_data, y_data, linestyle='--', marker='o', label=bench_name)
+
+	plt.legend()
+	plt.xticks(full_x_data, full_x_data)
+	plt.xlabel("saturation bound")
+	plt.ylabel("total time (s)")
+	plt.savefig(OUTPUT_SATURATION_SCALABILITY_PLOT_PATH)
 
 def main():
 	set_logger()
-	bench_basic_table()
+	# bench_basic_table()
+	bench_saturation_depth_scalability(also_nirn=False)
 
 if __name__ == "__main__":
 	main()
