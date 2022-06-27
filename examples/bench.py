@@ -193,6 +193,7 @@ def bench_saturation_depth_scalability(also_nirn=True):
 
 			except subprocess.TimeoutExpired:
 				logger.info("Got timeout on %s" % str(bench_config))
+				break
 
 
 		plt.plot(x_data, y_data, linestyle='--', marker='o', label=bench_name)
