@@ -28,6 +28,6 @@ sig
 
   val saturate_c : Z3.context -> Z3.Solver.solver -> lterm list -> lterm list -> lterm list -> Z3.Expr.expr -> lterm list -> int list * lterm list * lterm list
 
-  val optimize_t_by_project : lterm -> V.v -> V.v list -> polyhedron -> Z3.context -> Z3.Solver.solver -> lterm list * lterm list
+  val optimize_t : ?use_proj:bool -> lterm -> V.v -> V.v list -> polyhedron -> Z3.context -> Z3.Solver.solver -> lterm list * lterm list
 
 end

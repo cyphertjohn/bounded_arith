@@ -6,6 +6,7 @@ let () = Bound.Log.log_times := true
 let () = SymBoundBenchmark.process_cmdline ()
 let sat_bound = SymBoundBenchmark.sat_bound ()
 let compute_hull = SymBoundBenchmark.compute_hull ()
+let use_proj = not (SymBoundBenchmark.use_lp ())
 
 let vars_to_keep = ["x"; "supply0"; "balance0"; "liquidFunds"]
 
@@ -28,7 +29,7 @@ let withdrawJoined = List.map from_string [
 					"balanceJoinedBurn - amountJoined - balanceJoined";
 				]
 
-let tupperAndTlower = Bound.Log.log_time "Rewrite joined no worse" (Bound.Rewriter.rewrite ~sat:sat_bound ~compute_hull:compute_hull (withdrawSplit @ withdrawJoined)
+let tupperAndTlower = Bound.Log.log_time "Rewrite joined no worse" (Bound.Rewriter.rewrite ~use_proj:use_proj ~sat:sat_bound ~compute_hull:compute_hull (withdrawSplit @ withdrawJoined)
 						  (List.map from_string ["x"; "supply0 - 2x"; "balance0 - 2x"; "liquidFunds"])
 						  vars_to_keep)
    						  [from_string "balanceSplit - balanceJoined"]

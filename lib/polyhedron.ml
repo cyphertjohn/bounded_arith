@@ -967,6 +967,54 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
     Format.pp_close_box f ()*)
 
 
+
+  let upper_b_t_by_lp t dims_big_to_small p ctx = 
+    match p with | Bot -> (DM.empty, C.zero) | Ne poly ->
+    let solver = Z3.Optimize.mk_opt ctx in
+    let non_strict_s, strict_s = (S.fold (fun e ns -> S.add e (S.add (lt_negate e) ns)) poly.eqs poly.non_strict), poly.strict in
+    let non_strict_lambda, strict_mu = List.mapi (fun i ns -> Z3.Arithmetic.Real.mk_const_s ctx ("lambda" ^ (string_of_int i)), ns) (S.to_list non_strict_s), List.mapi (fun i s -> Z3.Arithmetic.Real.mk_const_s ctx ("mu" ^ (string_of_int i)), s) (S.to_list strict_s) in
+    let non_neg_lambda_mu = List.map (fun (l, _) -> Z3.Arithmetic.mk_ge ctx l (Z3.Arithmetic.Real.mk_numeral_i ctx 0)) (non_strict_lambda @ strict_mu) in
+    Z3.Optimize.add solver non_neg_lambda_mu;
+    let const_dim = List.nth dims_big_to_small ((List.length dims_big_to_small) - 1) in
+    let folder r_cnstrs dim = 
+      let r = Z3.Arithmetic.Real.mk_const_s ctx ("r" ^ (string_of_int (V.hash dim))) in
+      let t_c = 
+        if V.equal dim const_dim then snd t
+        else try DM.find dim (fst t) with Not_found -> C.zero in
+      let lhs = Z3.Arithmetic.mk_sub ctx [r; Z3.Arithmetic.Real.mk_numeral_s ctx (C.to_string_c t_c)] in
+      let collect_multipliers collected (multiplier, cnstr) = 
+        let coef = if V.equal dim const_dim then (snd cnstr) else try DM.find dim (fst cnstr) with Not_found -> C.zero in
+        if C.cmp coef C.zero = 0 then collected
+        else (Z3.Arithmetic.mk_mul ctx [multiplier; Z3.Arithmetic.Real.mk_numeral_s ctx (C.to_string_c coef)]) :: collected
+      in
+      let rhs_sum = List.fold_left collect_multipliers (List.fold_left collect_multipliers [] non_strict_lambda) strict_mu in
+      Z3.Optimize.add solver [Z3.Boolean.mk_eq ctx (lhs) (Z3.Arithmetic.mk_add ctx rhs_sum)];
+      (dim, r) :: r_cnstrs
+    in
+    let r_cnstrs_small_to_big = List.fold_left folder [] dims_big_to_small in
+    List.iter (fun (dim, r) -> let _ = Z3.Optimize.add_soft solver (Z3.Boolean.mk_eq ctx r (Z3.Arithmetic.Real.mk_numeral_i ctx 0)) "1" (Z3.Symbol.mk_int ctx (V.hash dim)) in ()) (List.rev r_cnstrs_small_to_big);
+    let _ = Z3.Optimize.minimize solver (Z3.Arithmetic.mk_add ctx (List.map fst (non_strict_lambda @ strict_mu))) in
+    Log.log_line_s ~level:`trace ("Z3 opt prob: ");
+    Log.log_line_s ~level:`trace (Z3.Optimize.to_string solver);
+    match Z3.Optimize.check solver with
+    | Z3.Solver.UNKNOWN | Z3.Solver.UNSATISFIABLE -> failwith "unable to solve linear program"
+    | Z3.Solver.SATISFIABLE ->
+      match Z3.Optimize.get_model solver with
+      | None -> failwith "Unable to obtain z3 model"
+      | Some m ->
+        let collect_remainder rem (r_dim, r_e) = 
+          match (Z3.Model.get_const_interp_e m r_e) with
+          | None -> failwith "Z3 model doesn't have an r"
+          | Some rv ->
+            if V.equal r_dim const_dim then
+              (fst rem, C.of_zarith_q (Z3.Arithmetic.Real.get_ratio rv))
+            else
+              DM.add r_dim (C.of_zarith_q (Z3.Arithmetic.Real.get_ratio rv)) (fst rem), snd rem
+        in
+        List.fold_left collect_remainder (DM.empty, C.zero) r_cnstrs_small_to_big
+
+
+
   let optimize_t_by_project t fresh_dim dims_in_ord poly ctx solver =
     let t_eq_D = DM.add fresh_dim (C.from_string_c "-1") (fst t), (snd t) in
     let poly_with_eq = add_cnstr `eq poly t_eq_D in
@@ -1185,4 +1233,12 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
       else real_lowers_l
     in
     ups, lows
+
+  let optimize_t ?(use_proj = true) t fresh_dim dims_in_ord poly ctx solver = 
+    if use_proj then optimize_t_by_project t fresh_dim dims_in_ord poly ctx solver
+    else
+      let t_upper = upper_b_t_by_lp t dims_in_ord poly ctx in
+      let t_lower = upper_b_t_by_lp (lt_negate t) dims_in_ord poly ctx in
+      [t_upper], [t_lower]
+
 end

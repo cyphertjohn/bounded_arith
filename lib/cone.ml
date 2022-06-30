@@ -649,7 +649,7 @@ module Make(P : Poly.Polynomial) = struct
     Format.pp_close_box f ()*)
 
 
-  let i_reduce_proj p c = 
+  let i_reduce_proj use_proj p c = 
     let bigD = id_to_mon (fresh_dim ()) in
     let ineqs = c.ineqs in
     let p_ired_m = extract_const (poly_to_dim p) in
@@ -660,19 +660,19 @@ module Make(P : Poly.Polynomial) = struct
     let z3_ineqs = List.map (P.cntsr_to_z3 `ge c.z3ctx) ineqs_ex in
     let polyhedron = List.fold_left (P.add_cnstr `ge) P.top_p ineqs_ex in
     Z3.Solver.add solver z3_ineqs;
-    let (uppers, lowers) = P.optimize_t_by_project p_ired_m bigD sorted_dims polyhedron c.z3ctx solver in
+    let (uppers, lowers) = P.optimize_t ~use_proj:use_proj p_ired_m bigD sorted_dims polyhedron c.z3ctx solver in
     let bounds_to_polys c = dim_to_poly (MM.add const_dim (snd c) (fst c)) in
     List.map bounds_to_polys uppers, List.map bounds_to_polys lowers
      
 
 
-  let reduce p c = 
-    let p_ired,_ = Log.log_time_cum "reduce eq" (Cl.reduce p) c.closure in
+  let reduce ?(use_proj = true) p c = 
+    let p_ired,_ = Cl.reduce p c.closure in
     (*let neg_comb, p_ineq_red = Log.log_time_cum "reduce ineq" (reduce_ineq p_ired) c in
     (*let eq_just = {orig = p_ired; mults} in*)
     Log.log ~level:`debug pp_red (Some (p_ired, neg_comb, p_ineq_red, c));*)
 
-    Log.log_time_cum "reduce ineq" (i_reduce_proj p_ired) c
+    i_reduce_proj use_proj p_ired c
 
     (*p_ineq_red*)
     
@@ -698,8 +698,8 @@ module Make(P : Poly.Polynomial) = struct
       fst (add_ineq co ine_red (Given))
     in
     let prod_sat_cone = 
-      Log.log_time_cum "prod sat" (List.fold_left red_add_ine (make_empty_cone sat cl)) ineqs in
-    let unnormal_c = Log.log_time_cum "impl sat" (saturate hull prod_sat_cone) impls in
+      List.fold_left red_add_ine (make_empty_cone sat cl) ineqs in
+    let unnormal_c = saturate hull prod_sat_cone impls in
     (*Log.log_time_cum "normalize" normalize unnormal_c*)
     unnormal_c
   

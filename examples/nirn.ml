@@ -6,6 +6,7 @@ let () = Bound.Log.log_times := true
 let () = SymBoundBenchmark.process_cmdline ()
 let sat_bound = SymBoundBenchmark.sat_bound ()
 let compute_hull = SymBoundBenchmark.compute_hull ()
+let use_proj = not (SymBoundBenchmark.use_lp ())
 
 let vars_to_keep = ["supply0"; (* "priceAtLastFee0"; *) "performanceFee"; "balance"; "x"; (* "y"; *) "E18"]
 
@@ -28,7 +29,7 @@ let transferYAfterX = List.map from_string [
 					"floor((x * supplyY) / (balance)) - sharesY";
 				]
 
-let tupperAndTlower = Bound.Log.log_time "Rewrite upper" (Bound.Rewriter.rewrite ~sat:sat_bound ~compute_hull:compute_hull (transferX @ transferYAfterX @ [from_string "10^2 - E18"])
+let tupperAndTlower = Bound.Log.log_time "Rewrite total" (Bound.Rewriter.rewrite ~use_proj:use_proj ~sat:sat_bound ~compute_hull:compute_hull (transferX @ transferYAfterX @ [from_string "10^2 - E18"])
 						  (List.map from_string ["supply0 - 1" (* shares = supply == 0 ? amount : amount.mul(supply) / bal *); 
 						  						(* "priceAtLastFee0"; *) 
 						  						"performanceFee"; 

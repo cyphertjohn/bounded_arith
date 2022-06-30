@@ -14,7 +14,7 @@ module Make(P : Poly.Polynomial) :
 
     val unpurify : poly -> cone -> P.C.coef Sigs.Expr.expr
 
-    val reduce : poly -> cone -> (poly list) * (poly list)
+    val reduce : ?use_proj:bool -> poly -> cone -> (poly list) * (poly list)
 
     val ppc : Format.formatter -> cone -> unit
     
