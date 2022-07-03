@@ -57,7 +57,7 @@ SCALABILITY_TIMEOUT_SECONDS = 90 # TODO: restore
 
 BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL = {
 	"elastic": (3, "o"),
-	"fixedPointInt": (2, "s"), # TODO: check numbers
+	"fixedPointInt": (3, "s"),
 	"manualPrice": (2, "*"),
 	"manualPriceMonotone": (2, "D"),
 	"tokent": (3, "^"),
