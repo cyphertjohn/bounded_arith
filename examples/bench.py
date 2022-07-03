@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import typing
 import statistics
 import matplotlib.pyplot as plt
+import numpy as np
 
 EXAMPLES_BIN_DIR = "."
 NUM_RUNS = 3
@@ -49,7 +50,7 @@ BASIC_TABLE_TAIL_LATEX = r"""\end{tabular}
 \end{table}
 """
 
-SATURATION_SCALABILITY_MAX_BOUND = 10
+SATURATION_SCALABILITY_MAX_BOUND = 7
 SCALABILITY_TIMEOUT_SECONDS = 60
 
 OUTPUT_SATURATION_SCALABILITY_PLOT_PATH = "saturation_scalability.png"
@@ -104,16 +105,10 @@ def get_time_by_keyword(kwrd, output):
 
 def execute_and_summarize(bench_config, timeout=None):
 	output = execute_benchmark(bench_config, timeout=timeout)
-	prod_sat_time = get_time_by_keyword(r"prod sat", output)
-	nimpl_sat_time = get_time_by_keyword(r"nimpl sat", output)
-	reduce_eq_time = get_time_by_keyword(r"reduce eq", output)
-	reduce_ineq_time = get_time_by_keyword(r"reduce ineq", output)
-	rewrite_time = get_time_by_keyword(r"Rewrite \D*", output)
 
-	csat_time = prod_sat_time + nimpl_sat_time
-	reduce_time = reduce_eq_time + reduce_ineq_time
-
-	total_time = rewrite_time # TODO: is this correct?
+	csat_time = get_time_by_keyword(r"Construct cone", output)
+	reduce_time = get_time_by_keyword(r"Reducing", output)
+	total_time = get_time_by_keyword(r"Rewrite.* total", output)
 
 	return ExperimentSummary(bench_config, 1, csat_time, reduce_time, total_time)
 
@@ -200,14 +195,15 @@ def bench_saturation_depth_scalability(also_nirn=True):
 
 	plt.legend()
 	plt.xticks(full_x_data, full_x_data)
+	plt.yticks(np.arange(0, 60, 2)) 
 	plt.xlabel("saturation bound")
 	plt.ylabel("total time (s)")
 	plt.savefig(OUTPUT_SATURATION_SCALABILITY_PLOT_PATH)
 
 def main():
 	set_logger()
-	# bench_basic_table()
-	bench_saturation_depth_scalability(also_nirn=False)
+	bench_basic_table(also_nirn=False)
+	# bench_saturation_depth_scalability(also_nirn=False)
 
 if __name__ == "__main__":
 	main()
