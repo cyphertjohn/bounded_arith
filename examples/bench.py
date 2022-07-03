@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import typing
 import statistics
 import matplotlib.pyplot as plt
+import numpy as np
 
 EXAMPLES_BIN_DIR = "."
 NUM_RUNS = 3
@@ -14,13 +15,12 @@ NUM_RUNS = 3
 NIRN_NAME = "nirn"
 
 BENCHMARKS = [
-	("elastic", [r"upper \& lower", "5", "3", "382", "362"], ["\\checkmark"]),
-	("fixedPointIntMulDiv", [r"upper \& lower", "0", "2", "362", "452"], ["\\checkmark"]),
-	("fixedPointIntDivMul", [r"upper \& lower", "0", "2", "362", "452"], ["\\checkmark"]),
-	("manualPrice", [r"upper \& lower", "3", "4", "223", "216"], ["\\checkmark"]),
-	("manualPriceMonotone", [r"monotonicity", "6", "5", "223", "216"], ["\\checkmark"]),
-	(NIRN_NAME, [r"upper", "10", "5", "1196", "2297"], ["\\checkmark"]), # TODO: resurrect (commented out because slow)
-	("tokent", [r"upper \& lower", "10", "4", "244", "558"], ["\\checkmark"]),
+	("elastic", ["5", "3", "3", "382", "362"], []),
+	("fixedPointInt", ["0", "2", "2", "362", "452"], []),
+	("manualPrice", ["3", "4", "1", "223", "216"], []),
+	("manualPriceMonotone", ["6", "5", "2", "223", "216"], []),
+	(NIRN_NAME, ["10", "5", "6", "1196", "2297"], []),
+	("tokent", ["10", "4", "3", "244", "558"], []),
 ]
 
 OUTPUT_BASIC_TABLE_PATH = "basic_table.tex"
@@ -29,18 +29,20 @@ BASIC_TABLE_HEADER_LATEX = r"""\begin{table}[t!]
 	\centering
 	{\small \caption{\label{Ta:Rewriting}
             {\small This table displays the results of the running the system on the examples. 
-            Column 2 indicates the number of terms asked to rewrite for a given set of assumptions. \yf{remove?}
-            Column 3 and 4 respectively give the number of equation and inequality assumptions (not including instantiated axioms) initially given. \yf{hardcoded numbers not up to date}
-            Columns 5 and 6 respectively give the number of distinct monomials and inequalities generated from the saturated cone. 
-            Column 7 gives the overall time in seconds to solve all queries. 
-            Column 8 gives the time in seconds to saturate the cone. 
-            Column 9 gives the time Z3 took to solve the final optimization problem given the resulting cone. 
-            Column 10 displays whether the result of the system was useful. All experiments in this table were taken using a product saturation depth of 3. 
+            \#eq's and \#ineq's respectively give the number of equality and inequality assumptions (not including instantiated axioms) initially given; 
+            \#floors is the number of floor terms in the assumptions. \yf{hardcoded numbers not up to date}
+            \#c-m and \#c-in's respectively give the number of distinct monomials and inequalities generated from the saturated cone. 
+            time gives the overall time in seconds to solve all queries. 
+            csat time gives the time in seconds to saturate the cone. 
+            reduce time gives the time to reduce w.r.t.\ the cone using the local projection method. 
+            % res displays whether the result of the system was useful. 
+            reduce (lp) gives the time to reduce using linear programming instead of local projection.
+            All experiments in this table were taken using a product saturation depth of 3. 
 	}}}
 	\resizebox{.99\textwidth}{!}{
-\begin{tabular}{|| l | l | r | r || r | r | r | r | r | c ||}
+\begin{tabular}{|| l | r | r | r || r | r || r | r | r || r ||}
 \hline
-Benchmark name & \#t's & \#eq's & \#in's & \#m & \#in's & time & csat time & reduce time & res\\
+Benchmark name & \#eq's & \#in's & \#floors & \#c-m & \#c-in's & time (s) & csat (s) & reduce (s) & reduce lp (s) \\
 \hline\hline
 """
 
@@ -49,10 +51,20 @@ BASIC_TABLE_TAIL_LATEX = r"""\end{tabular}
 \end{table}
 """
 
-SATURATION_SCALABILITY_MAX_BOUND = 10
-SCALABILITY_TIMEOUT_SECONDS = 60
+SATURATION_SCALABILITY_MAX_BOUND = 7
+# SCALABILITY_TIMEOUT_SECONDS = 5
+SCALABILITY_TIMEOUT_SECONDS = 90 # TODO: restore
 
-OUTPUT_SATURATION_SCALABILITY_PLOT_PATH = "saturation_scalability.png"
+BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL = {
+	"elastic": (3, "o"),
+	"fixedPointInt": (3, "s"),
+	"manualPrice": (2, "*"),
+	"manualPriceMonotone": (2, "D"),
+	"tokent": (3, "^"),
+	NIRN_NAME: (3, "P")
+}
+
+OUTPUT_SATURATION_SCALABILITY_PLOT_PATH = "saturation_scalability.pdf"
 
 global logger
 
@@ -77,11 +89,11 @@ def set_logger():
 	logger = logging.getLogger(__name__)
 
 def execute_benchmark(bench_config, timeout=None):
-	(bench_name, saturation_bound, use_convex) = bench_config
+	(bench_name, saturation_bound, use_lp) = bench_config
 
-	convex_config = ["-hull"] if use_convex else []
-	logger.info("Executing %s. Saturation bound: %d. Use convex: %r" % (bench_name, saturation_bound, use_convex) )
-	completed = subprocess.run(["%s/%s.exe" % (EXAMPLES_BIN_DIR,bench_name), "-sat", str(saturation_bound)] + convex_config,
+	lp_config = ["-lp"] if use_lp else []
+	logger.info("Executing %s. Saturation bound: %d. Use lp: %r" % (bench_name, saturation_bound, use_lp) )
+	completed = subprocess.run(["%s/%s.exe" % (EXAMPLES_BIN_DIR,bench_name), "-sat", str(saturation_bound)] + lp_config,
 							  capture_output=True,
 							  timeout=timeout)
 	process_output = completed.stdout
@@ -104,16 +116,10 @@ def get_time_by_keyword(kwrd, output):
 
 def execute_and_summarize(bench_config, timeout=None):
 	output = execute_benchmark(bench_config, timeout=timeout)
-	prod_sat_time = get_time_by_keyword(r"prod sat", output)
-	nimpl_sat_time = get_time_by_keyword(r"nimpl sat", output)
-	reduce_eq_time = get_time_by_keyword(r"reduce eq", output)
-	reduce_ineq_time = get_time_by_keyword(r"reduce ineq", output)
-	rewrite_time = get_time_by_keyword(r"Rewrite \D*", output)
 
-	csat_time = prod_sat_time + nimpl_sat_time
-	reduce_time = reduce_eq_time + reduce_ineq_time
-
-	total_time = rewrite_time # TODO: is this correct?
+	csat_time = get_time_by_keyword(r"Construct cone", output)
+	reduce_time = get_time_by_keyword(r"Reducing", output)
+	total_time = get_time_by_keyword(r"Rewrite.* total", output)
 
 	return ExperimentSummary(bench_config, 1, csat_time, reduce_time, total_time)
 
@@ -141,11 +147,15 @@ def bench_basic_table(also_nirn=True):
 				continue
 
 			saturation_bound = 3
-			use_convex = False
-			bench_config = (bench_name, saturation_bound, use_convex)
+			bench_config_local_project = (bench_name, saturation_bound, False)
 
-			res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS)
-			logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config, res_summary))
+			res_summary = multiple_runs_and_summarize(bench_config_local_project, NUM_RUNS)
+			logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config_local_project, res_summary))
+
+			bench_config_lp = (bench_name, saturation_bound, True)
+
+			lp_res_summary = multiple_runs_and_summarize(bench_config_lp, NUM_RUNS)
+			logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config_lp, res_summary))
 
 			f.write(bench_name)
 			f.write(" & ")
@@ -156,6 +166,8 @@ def bench_basic_table(also_nirn=True):
 			f.write(time_to_str(res_summary.csat_time))
 			f.write(" & ")
 			f.write(time_to_str(res_summary.reduce_time))
+			f.write(" & ")
+			f.write(time_to_str(lp_res_summary.reduce_time))
 			if aux_data_post:
 				f.write(" & ")
 			f.write(" & ".join(aux_data_post))
@@ -172,7 +184,7 @@ def bench_saturation_depth_scalability(also_nirn=True):
 
 	full_x_data = list(range(1, SATURATION_SCALABILITY_MAX_BOUND + 1))
 
-	for bench_name, aux_data_pre, aux_data_post in BENCHMARKS:
+	for bench_name, _, _ in BENCHMARKS:
 		if (not also_nirn) and bench_name == NIRN_NAME:
 			continue
 
@@ -181,8 +193,8 @@ def bench_saturation_depth_scalability(also_nirn=True):
 
 		for i in full_x_data:
 			saturation_bound = i
-			use_convex = False
-			bench_config = (bench_name, saturation_bound, use_convex)
+			use_lp = False
+			bench_config = (bench_name, saturation_bound, use_lp)
 
 			try:
 				res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS, timeout=SCALABILITY_TIMEOUT_SECONDS)
@@ -196,18 +208,23 @@ def bench_saturation_depth_scalability(also_nirn=True):
 				break
 
 
-		plt.plot(x_data, y_data, linestyle='--', marker='o', label=bench_name)
+		success_depth, marker = BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL[bench_name]
+		success_x_index = full_x_data.index(success_depth)
+
+		plt.plot(x_data, y_data, linestyle='--', marker=marker, label=bench_name)
+		plt.plot(x_data[success_x_index], y_data[success_x_index], 'k'+marker, markersize=20, fillstyle='none', markeredgewidth=1.5)
 
 	plt.legend()
-	plt.xticks(full_x_data, full_x_data)
-	plt.xlabel("saturation bound")
+	plt.xticks(full_x_data, full_x_data) # TODO: adjust full_x_data, full_y_data automatically
+	plt.yticks(np.arange(0, SCALABILITY_TIMEOUT_SECONDS, SCALABILITY_TIMEOUT_SECONDS / 60 * 2)) 
+	plt.xlabel("saturation depth")
 	plt.ylabel("total time (s)")
-	plt.savefig(OUTPUT_SATURATION_SCALABILITY_PLOT_PATH)
+	plt.savefig(OUTPUT_SATURATION_SCALABILITY_PLOT_PATH, bbox_inches='tight')
 
 def main():
 	set_logger()
-	# bench_basic_table()
-	bench_saturation_depth_scalability(also_nirn=False)
+	# bench_basic_table(also_nirn=False)
+	bench_saturation_depth_scalability(also_nirn=True)
 
 if __name__ == "__main__":
 	main()
