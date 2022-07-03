@@ -15,12 +15,12 @@ NUM_RUNS = 3
 NIRN_NAME = "nirn"
 
 BENCHMARKS = [
-	("elastic", [r"upper \& lower", "5", "3", "382", "362"], ["\\checkmark"]),
-	("fixedPointInt", [r"upper \& lower", "0", "2", "362", "452"], ["\\checkmark"]),
-	("manualPrice", [r"upper \& lower", "3", "4", "223", "216"], ["\\checkmark"]),
-	("manualPriceMonotone", [r"monotonicity", "6", "5", "223", "216"], ["\\checkmark"]),
-	(NIRN_NAME, [r"upper", "10", "5", "1196", "2297"], ["\\checkmark"]), # TODO: resurrect (commented out because slow)
-	("tokent", [r"upper \& lower", "10", "4", "244", "558"], ["\\checkmark"]),
+	("elastic", ["5", "3", "382", "362"], ["\\checkmark"]),
+	("fixedPointInt", ["0", "2", "362", "452"], ["\\checkmark"]),
+	("manualPrice", ["3", "4", "223", "216"], ["\\checkmark"]),
+	("manualPriceMonotone", ["6", "5", "223", "216"], ["\\checkmark"]),
+	(NIRN_NAME, ["10", "5", "1196", "2297"], ["\\checkmark"]), # TODO: resurrect (commented out because slow)
+	("tokent", ["10", "4", "244", "558"], ["\\checkmark"]),
 ]
 
 OUTPUT_BASIC_TABLE_PATH = "basic_table.tex"
@@ -29,18 +29,17 @@ BASIC_TABLE_HEADER_LATEX = r"""\begin{table}[t!]
 	\centering
 	{\small \caption{\label{Ta:Rewriting}
             {\small This table displays the results of the running the system on the examples. 
-            Column 2 indicates the number of terms asked to rewrite for a given set of assumptions. \yf{remove?}
-            Column 3 and 4 respectively give the number of equation and inequality assumptions (not including instantiated axioms) initially given. \yf{hardcoded numbers not up to date}
-            Columns 5 and 6 respectively give the number of distinct monomials and inequalities generated from the saturated cone. 
-            Column 7 gives the overall time in seconds to solve all queries. 
-            Column 8 gives the time in seconds to saturate the cone. 
-            Column 9 gives the time Z3 took to solve the final optimization problem given the resulting cone. 
-            Column 10 displays whether the result of the system was useful. All experiments in this table were taken using a product saturation depth of 3. 
+            \#eq's and \#ineq's respectively give the number of equality and inequality assumptions (not including instantiated axioms) initially given. \yf{hardcoded numbers not up to date}
+            \#c-m and \#c-in's respectively give the number of distinct monomials and inequalities generated from the saturated cone. 
+            time gives the overall time in seconds to solve all queries. 
+            csat time 8 gives the time in seconds to saturate the cone. 
+            reduce time 9 gives the time to reduce w.r.t.\ the cone using the local projection method. 
+            res displays whether the result of the system was useful. All experiments in this table were taken using a product saturation depth of 3. 
 	}}}
 	\resizebox{.99\textwidth}{!}{
-\begin{tabular}{|| l | l | r | r || r | r | r | r | r | c ||}
+\begin{tabular}{|| l | r | r || r | r | r | r | r | c ||}
 \hline
-Benchmark name & \#t's & \#eq's & \#in's & \#m & \#in's & time & csat time & reduce time & res\\
+Benchmark name & \#eq's & \#in's & \#c-m & \#c-in's & time & csat time & reduce time & res\\
 \hline\hline
 """
 
