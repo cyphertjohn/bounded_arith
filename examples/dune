@@ -1,7 +1,7 @@
 (executables
-  (names elastic fixedPointIntMulDiv fixedPointIntDivMul manualPrice manualPriceMonotone nirn tokent)
+  (names elastic fixedPointInt manualPrice manualPriceMonotone nirn tokent)
   (libraries bound)
   (promote (until-clean) (into ..))
   ;(flags -cclib -lgmp_caml)
-  (modules elastic fixedPointIntMulDiv fixedPointIntDivMul manualPrice manualPriceMonotone nirn tokent symBoundBenchmark)
+  (modules elastic fixedPointInt manualPrice manualPriceMonotone nirn tokent symBoundBenchmark)
 )
