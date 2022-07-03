@@ -15,12 +15,12 @@ NUM_RUNS = 3
 NIRN_NAME = "nirn"
 
 BENCHMARKS = [
-	("elastic", ["5", "3"], ["382", "362", "\\checkmark"]),
-	("fixedPointInt", ["0", "2"], ["362", "452", "\\checkmark"]),
-	("manualPrice", ["3", "4"], ["223", "216", "\\checkmark"]),
-	("manualPriceMonotone", ["6", "5"], ["223", "216", "\\checkmark"]),
-	(NIRN_NAME, ["10", "5"], ["1196", "2297", "\\checkmark"]), # TODO: resurrect (commented out because slow)
-	("tokent", ["10", "4"], ["244", "558", "\\checkmark"]),
+	("elastic", ["5", "3", "3", "382", "362"], []),
+	("fixedPointInt", ["0", "2", "2", "362", "452"], []),
+	("manualPrice", ["3", "4", "1", "223", "216"], []),
+	("manualPriceMonotone", ["6", "5", "2", "223", "216"], []),
+	(NIRN_NAME, ["10", "5", "6", "1196", "2297"], []),
+	("tokent", ["10", "4", "3", "244", "558"], []),
 ]
 
 OUTPUT_BASIC_TABLE_PATH = "basic_table.tex"
@@ -29,17 +29,20 @@ BASIC_TABLE_HEADER_LATEX = r"""\begin{table}[t!]
 	\centering
 	{\small \caption{\label{Ta:Rewriting}
             {\small This table displays the results of the running the system on the examples. 
-            \#eq's and \#ineq's respectively give the number of equality and inequality assumptions (not including instantiated axioms) initially given. \yf{hardcoded numbers not up to date}
+            \#eq's and \#ineq's respectively give the number of equality and inequality assumptions (not including instantiated axioms) initially given; 
+            \#floors is the number of floor terms in the assumptions. \yf{hardcoded numbers not up to date}
             \#c-m and \#c-in's respectively give the number of distinct monomials and inequalities generated from the saturated cone. 
             time gives the overall time in seconds to solve all queries. 
-            csat time 8 gives the time in seconds to saturate the cone. 
-            reduce time 9 gives the time to reduce w.r.t.\ the cone using the local projection method. 
-            res displays whether the result of the system was useful. All experiments in this table were taken using a product saturation depth of 3. 
+            csat time gives the time in seconds to saturate the cone. 
+            reduce time gives the time to reduce w.r.t.\ the cone using the local projection method. 
+            % res displays whether the result of the system was useful. 
+            reduce (lp) gives the time to reduce using linear programming instead of local projection.
+            All experiments in this table were taken using a product saturation depth of 3. 
 	}}}
 	\resizebox{.99\textwidth}{!}{
-\begin{tabular}{|| l | r | r || r || r | r || r | r | c ||}
+\begin{tabular}{|| l | r | r | r || r | r || r | r | r || r ||}
 \hline
-Benchmark name & \#eq's & \#in's & time & csat time & reduce time & \#c-m & \#c-in's & res\\
+Benchmark name & \#eq's & \#in's & \#floors & \#c-m & \#c-in's & time (s) & csat (s) & reduce (s) & reduce lp (s) \\
 \hline\hline
 """
 
@@ -49,9 +52,19 @@ BASIC_TABLE_TAIL_LATEX = r"""\end{tabular}
 """
 
 SATURATION_SCALABILITY_MAX_BOUND = 7
-SCALABILITY_TIMEOUT_SECONDS = 60
+# SCALABILITY_TIMEOUT_SECONDS = 5
+SCALABILITY_TIMEOUT_SECONDS = 90 # TODO: restore
 
-OUTPUT_SATURATION_SCALABILITY_PLOT_PATH = "saturation_scalability.png"
+BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL = {
+	"elastic": (3, "o"),
+	"fixedPointInt": (2, "s"), # TODO: check numbers
+	"manualPrice": (2, "*"),
+	"manualPriceMonotone": (2, "D"),
+	NIRN_NAME: (3, "P"),
+	"tokent": (3, "^")
+}
+
+OUTPUT_SATURATION_SCALABILITY_PLOT_PATH = "saturation_scalability.pdf"
 
 global logger
 
@@ -134,11 +147,15 @@ def bench_basic_table(also_nirn=True):
 				continue
 
 			saturation_bound = 3
-			use_lp = False
-			bench_config = (bench_name, saturation_bound, use_lp)
+			bench_config_local_project = (bench_name, saturation_bound, False)
 
-			res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS)
-			logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config, res_summary))
+			res_summary = multiple_runs_and_summarize(bench_config_local_project, NUM_RUNS)
+			logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config_local_project, res_summary))
+
+			bench_config_lp = (bench_name, saturation_bound, True)
+
+			lp_res_summary = multiple_runs_and_summarize(bench_config_lp, NUM_RUNS)
+			logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config_lp, res_summary))
 
 			f.write(bench_name)
 			f.write(" & ")
@@ -149,6 +166,8 @@ def bench_basic_table(also_nirn=True):
 			f.write(time_to_str(res_summary.csat_time))
 			f.write(" & ")
 			f.write(time_to_str(res_summary.reduce_time))
+			f.write(" & ")
+			f.write(time_to_str(lp_res_summary.reduce_time))
 			if aux_data_post:
 				f.write(" & ")
 			f.write(" & ".join(aux_data_post))
@@ -165,7 +184,7 @@ def bench_saturation_depth_scalability(also_nirn=True):
 
 	full_x_data = list(range(1, SATURATION_SCALABILITY_MAX_BOUND + 1))
 
-	for bench_name, aux_data_pre, aux_data_post in BENCHMARKS:
+	for bench_name, _, _ in BENCHMARKS:
 		if (not also_nirn) and bench_name == NIRN_NAME:
 			continue
 
@@ -189,19 +208,23 @@ def bench_saturation_depth_scalability(also_nirn=True):
 				break
 
 
-		plt.plot(x_data, y_data, linestyle='--', marker='o', label=bench_name)
+		success_depth, marker = BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL[bench_name]
+		success_x_index = full_x_data.index(success_depth)
+
+		plt.plot(x_data, y_data, linestyle='--', marker=marker, label=bench_name)
+		plt.plot(x_data[success_x_index], y_data[success_x_index], 'k'+marker, markersize=20, fillstyle='none', markeredgewidth=1.5)
 
 	plt.legend()
-	plt.xticks(full_x_data, full_x_data)
-	plt.yticks(np.arange(0, 60, 2)) 
-	plt.xlabel("saturation bound")
+	plt.xticks(full_x_data, full_x_data) # TODO: adjust full_x_data, full_y_data automatically
+	plt.yticks(np.arange(0, SCALABILITY_TIMEOUT_SECONDS, SCALABILITY_TIMEOUT_SECONDS / 60 * 2)) 
+	plt.xlabel("saturation depth")
 	plt.ylabel("total time (s)")
-	plt.savefig(OUTPUT_SATURATION_SCALABILITY_PLOT_PATH)
+	plt.savefig(OUTPUT_SATURATION_SCALABILITY_PLOT_PATH, bbox_inches='tight')
 
 def main():
 	set_logger()
-	bench_basic_table(also_nirn=False)
-	# bench_saturation_depth_scalability(also_nirn=False)
+	# bench_basic_table(also_nirn=False)
+	bench_saturation_depth_scalability(also_nirn=False)
 
 if __name__ == "__main__":
 	main()
