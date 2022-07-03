@@ -15,6 +15,10 @@ module Make(P : Poly.Polynomial) = struct
     vars_to_remove: V.v list
   }
 
+  let get_num_eqs c = 
+    let ideal_size = List.length (I.get_generators c.ideal) in
+    ideal_size + (S.cardinal c.eliminated_vars)
+
   let create_order tbl ord a b = 
     try BatHashtbl.find tbl (a, b)
     with Not_found ->

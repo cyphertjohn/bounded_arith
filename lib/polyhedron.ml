@@ -99,6 +99,15 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
 
   type polyhedron = | Bot | Ne of ne_poly
 
+
+  let get_size p = 
+    match p with
+    | Bot -> (0, 0)
+    | Ne poly ->
+      let all_cnstrs = S.union (S.union poly.eqs poly.non_strict) poly.strict in
+      let dims = S.fold (fun (cmap, _) -> V.S.union (DM.domain cmap)) all_cnstrs V.S.empty in
+      (S.cardinal all_cnstrs, List.length (V.S.to_list dims))
+
   let pp f p = 
     match p with
     | Bot -> Format.pp_print_string f "Bot"

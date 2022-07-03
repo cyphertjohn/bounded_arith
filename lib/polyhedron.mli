@@ -18,6 +18,8 @@ sig
 
   val top_p : polyhedron
 
+  val get_size : polyhedron -> int * int
+
   val cntsr_to_z3 : [<`eq | `ge | `gt] -> Z3.context -> lterm -> Z3.Expr.expr
 
   val poly_to_z3 : Z3.context -> polyhedron -> Z3.Expr.expr

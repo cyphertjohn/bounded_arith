@@ -25,4 +25,6 @@ module Make(P : Poly.Polynomial) : ( sig
 
   val get_generators : closure -> poly list
 
+  val get_num_eqs : closure -> int
+
   end)

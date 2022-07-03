@@ -648,8 +648,20 @@ module Make(P : Poly.Polynomial) = struct
     Format.pp_force_newline f ();
     Format.pp_close_box f ()*)
 
+  let pp_stats f c = 
+    let num_eqs = Cl.get_num_eqs c.closure in
+    let ineqs = BatList.of_enum (BatEnum.map fst (IM.values c.ineqs)) in
+    let num_ineqs = List.length ineqs in
+    let mons = List.fold_left (fun acc ine -> MS.union acc (MM.domain ine)) MS.empty ineqs in
+    let num_mons = MS.cardinal mons in
+    Format.pp_print_string f "Cone size: ";
+    Format.pp_open_vbox f 0;
+    Format.pp_print_string f "Num eqs: "; Format.pp_print_int f num_eqs; Format.pp_print_space f ();
+    Format.pp_print_string f "Num ineqs: "; Format.pp_print_int f num_ineqs; Format.pp_print_space f ();
+    Format.pp_print_string f "Num of unique mons in ineqs: "; Format.pp_print_int f num_mons; Format.pp_close_box f ()
 
-  let i_reduce_proj use_proj p c = 
+
+  let i_reduce_ineq use_proj p c = 
     let bigD = id_to_mon (fresh_dim ()) in
     let ineqs = c.ineqs in
     let p_ired_m = extract_const (poly_to_dim p) in
@@ -671,8 +683,8 @@ module Make(P : Poly.Polynomial) = struct
     (*let neg_comb, p_ineq_red = Log.log_time_cum "reduce ineq" (reduce_ineq p_ired) c in
     (*let eq_just = {orig = p_ired; mults} in*)
     Log.log ~level:`debug pp_red (Some (p_ired, neg_comb, p_ineq_red, c));*)
-
-    i_reduce_proj use_proj p_ired c
+    Log.log ~level:`debug pp_stats (Some c);
+    i_reduce_ineq use_proj p_ired c
 
     (*p_ineq_red*)
     
