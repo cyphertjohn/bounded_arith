@@ -60,8 +60,8 @@ BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL = {
 	"fixedPointInt": (2, "s"), # TODO: check numbers
 	"manualPrice": (2, "*"),
 	"manualPriceMonotone": (2, "D"),
-	NIRN_NAME: (3, "P"),
-	"tokent": (3, "^")
+	"tokent": (3, "^"),
+	NIRN_NAME: (3, "P")
 }
 
 OUTPUT_SATURATION_SCALABILITY_PLOT_PATH = "saturation_scalability.pdf"
@@ -224,7 +224,7 @@ def bench_saturation_depth_scalability(also_nirn=True):
 def main():
 	set_logger()
 	# bench_basic_table(also_nirn=False)
-	bench_saturation_depth_scalability(also_nirn=False)
+	bench_saturation_depth_scalability(also_nirn=True)
 
 if __name__ == "__main__":
 	main()
