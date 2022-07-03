@@ -29,7 +29,7 @@ let withdrawJoined = List.map from_string [
 					"balanceJoinedBurn - amountJoined - balanceJoined";
 				]
 
-let tupperAndTlower = Bound.Log.log_time "Rewrite joined no worse" (Bound.Rewriter.rewrite ~use_proj:use_proj ~sat:sat_bound ~compute_hull:compute_hull (withdrawSplit @ withdrawJoined)
+let tupperAndTlower = Bound.Log.log_time "Rewrite joined no worse total" (Bound.Rewriter.rewrite ~use_proj:use_proj ~sat:sat_bound ~compute_hull:compute_hull (withdrawSplit @ withdrawJoined)
 						  (List.map from_string ["x"; "supply0 - 2x"; "balance0 - 2x"; "liquidFunds"])
 						  vars_to_keep)
    						  [from_string "balanceSplit - balanceJoined"]
