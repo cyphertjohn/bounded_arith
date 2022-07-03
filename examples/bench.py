@@ -15,12 +15,12 @@ NUM_RUNS = 3
 NIRN_NAME = "nirn"
 
 BENCHMARKS = [
-	("elastic", ["5", "3", "382", "362"], ["\\checkmark"]),
-	("fixedPointInt", ["0", "2", "362", "452"], ["\\checkmark"]),
-	("manualPrice", ["3", "4", "223", "216"], ["\\checkmark"]),
-	("manualPriceMonotone", ["6", "5", "223", "216"], ["\\checkmark"]),
-	(NIRN_NAME, ["10", "5", "1196", "2297"], ["\\checkmark"]), # TODO: resurrect (commented out because slow)
-	("tokent", ["10", "4", "244", "558"], ["\\checkmark"]),
+	("elastic", ["5", "3"], ["382", "362", "\\checkmark"]),
+	("fixedPointInt", ["0", "2"], ["362", "452", "\\checkmark"]),
+	("manualPrice", ["3", "4"], ["223", "216", "\\checkmark"]),
+	("manualPriceMonotone", ["6", "5"], ["223", "216", "\\checkmark"]),
+	(NIRN_NAME, ["10", "5"], ["1196", "2297", "\\checkmark"]), # TODO: resurrect (commented out because slow)
+	("tokent", ["10", "4"], ["244", "558", "\\checkmark"]),
 ]
 
 OUTPUT_BASIC_TABLE_PATH = "basic_table.tex"
@@ -37,9 +37,9 @@ BASIC_TABLE_HEADER_LATEX = r"""\begin{table}[t!]
             res displays whether the result of the system was useful. All experiments in this table were taken using a product saturation depth of 3. 
 	}}}
 	\resizebox{.99\textwidth}{!}{
-\begin{tabular}{|| l | r | r || r | r | r | r | r | c ||}
+\begin{tabular}{|| l | r | r || r || r | r || r | r | c ||}
 \hline
-Benchmark name & \#eq's & \#in's & \#c-m & \#c-in's & time & csat time & reduce time & res\\
+Benchmark name & \#eq's & \#in's & time & csat time & reduce time & \#c-m & \#c-in's & res\\
 \hline\hline
 """
 
@@ -76,11 +76,11 @@ def set_logger():
 	logger = logging.getLogger(__name__)
 
 def execute_benchmark(bench_config, timeout=None):
-	(bench_name, saturation_bound, use_convex) = bench_config
+	(bench_name, saturation_bound, use_lp) = bench_config
 
-	convex_config = ["-hull"] if use_convex else []
-	logger.info("Executing %s. Saturation bound: %d. Use convex: %r" % (bench_name, saturation_bound, use_convex) )
-	completed = subprocess.run(["%s/%s.exe" % (EXAMPLES_BIN_DIR,bench_name), "-sat", str(saturation_bound)] + convex_config,
+	lp_config = ["-lp"] if use_lp else []
+	logger.info("Executing %s. Saturation bound: %d. Use lp: %r" % (bench_name, saturation_bound, use_lp) )
+	completed = subprocess.run(["%s/%s.exe" % (EXAMPLES_BIN_DIR,bench_name), "-sat", str(saturation_bound)] + lp_config,
 							  capture_output=True,
 							  timeout=timeout)
 	process_output = completed.stdout
@@ -134,8 +134,8 @@ def bench_basic_table(also_nirn=True):
 				continue
 
 			saturation_bound = 3
-			use_convex = False
-			bench_config = (bench_name, saturation_bound, use_convex)
+			use_lp = False
+			bench_config = (bench_name, saturation_bound, use_lp)
 
 			res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS)
 			logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS, bench_config, res_summary))
@@ -174,8 +174,8 @@ def bench_saturation_depth_scalability(also_nirn=True):
 
 		for i in full_x_data:
 			saturation_bound = i
-			use_convex = False
-			bench_config = (bench_name, saturation_bound, use_convex)
+			use_lp = False
+			bench_config = (bench_name, saturation_bound, use_lp)
 
 			try:
 				res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS, timeout=SCALABILITY_TIMEOUT_SECONDS)
