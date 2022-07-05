@@ -3,11 +3,15 @@ import sys
 import logging
 import subprocess
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, asdict
 import typing
 import statistics
 import matplotlib.pyplot as plt
 import numpy as np
+import csv
+
+def dict_union(d1, d2):
+	return {**d1, **d2}
 
 EXAMPLES_BIN_DIR = "."
 NUM_RUNS_BASIC_TABLE = 3
@@ -50,9 +54,9 @@ BASIC_TABLE_TAIL_LATEX = r"""\end{tabular}
 \end{table}
 """
 
-SATURATION_SCALABILITY_MAX_BOUND = 10
+SATURATION_SCALABILITY_MAX_BOUND = 20
 # SCALABILITY_TIMEOUT_SECONDS = 5
-SCALABILITY_TIMEOUT_SECONDS = 90
+SCALABILITY_TIMEOUT_SECONDS = 15 * 60
 
 BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL = {
 	"elastic": (3, "o"),
@@ -64,6 +68,7 @@ BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL = {
 }
 
 OUTPUT_SATURATION_SCALABILITY_PLOT_PATH = "saturation_scalability.pdf"
+OUTPUT_SATURATION_SCALABILITY_CSV_PATH = "saturation_scalability.csv"
 
 NUM_RUNS_SATURATION_SCALABILITY = 3
 
@@ -76,6 +81,9 @@ class ExperimentSummary:
 	csat_time: float
 	reduce_time: float
 	total_time: float
+	cone_eqs: float # integer unless averaged
+	cone_ineqs: float # integer unless averaged
+	cone_monomials: float # integer unless averaged
 
 def set_logger():
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
@@ -115,6 +123,14 @@ def get_time_by_keyword(kwrd, output):
 		assert False
 	return float(match.group(1))
 
+def get_cone_size_from_log(output):
+	match = re.search(r"Cone size: Num eqs: (\d+)\\n\s*Num ineqs: (\d+)\\n\s*Num of unique mons in ineqs: (\d+)", output)
+	# match = re.search(r"Cone size: Num eqs: (\d+)\\n\s*Num ineqs:", output)
+	if not match:
+		assert False, output
+		return -1, -1, -1
+	return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
 def execute_and_summarize(bench_config, timeout=None):
 	output = execute_benchmark(bench_config, timeout=timeout)
 
@@ -122,7 +138,11 @@ def execute_and_summarize(bench_config, timeout=None):
 	reduce_time = get_time_by_keyword(r"Reducing", output)
 	total_time = get_time_by_keyword(r"Rewrite.* total", output)
 
-	return ExperimentSummary(bench_config, 1, csat_time, reduce_time, total_time)
+	cone_eqs, cone_ineqs, cone_monomials = get_cone_size_from_log(output)
+
+	return ExperimentSummary(bench_config, 1, 
+							csat_time, reduce_time, total_time,
+							cone_eqs, cone_ineqs, cone_monomials)
 
 def multiple_runs_and_summarize(bench_config, num_runs, timeout=None):
 	assert num_runs >= 1
@@ -131,7 +151,10 @@ def multiple_runs_and_summarize(bench_config, num_runs, timeout=None):
 							num_runs, 
 							statistics.mean(s.csat_time for s in summaries),
 							statistics.mean(s.reduce_time for s in summaries),
-							statistics.mean(s.total_time for s in summaries))
+							statistics.mean(s.total_time for s in summaries),
+							statistics.mean(s.cone_eqs for s in summaries),
+							statistics.mean(s.cone_ineqs for s in summaries),
+							statistics.mean(s.cone_monomials for s in summaries),)
 
 def time_to_str(t):
 	return str(round(t, 1))
@@ -181,50 +204,61 @@ def bench_basic_table(also_nirn=True):
 	logger.info("End bench basic table")
 
 def bench_saturation_depth_scalability(also_nirn=True):
-	logger.info("Start bench basic table")
+	logger.info("Start bench saturation depth scalability")
 
-	full_x_data = list(range(1, SATURATION_SCALABILITY_MAX_BOUND + 1))
+	with open(OUTPUT_SATURATION_SCALABILITY_CSV_PATH, "wt") as csv_log:
+		w = csv.DictWriter(csv_log, ["name", "depth"] + [f.name for f in fields(ExperimentSummary)])
+		w.writeheader()
 
-	for bench_name, _, _ in BENCHMARKS:
-		if (not also_nirn) and bench_name == NIRN_NAME:
-			continue
+		full_x_data = list(range(1, SATURATION_SCALABILITY_MAX_BOUND + 1))
 
-		x_data = []
-		y_data = []
+		for bench_name, _, _ in BENCHMARKS:
+			if (not also_nirn) and bench_name == NIRN_NAME:
+				continue
 
-		for i in full_x_data:
-			saturation_bound = i
-			use_lp = False
-			bench_config = (bench_name, saturation_bound, use_lp)
+			x_data = []
+			y_data = []
 
-			try:
-				res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS_SATURATION_SCALABILITY, timeout=SCALABILITY_TIMEOUT_SECONDS)
-				logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS_SATURATION_SCALABILITY, bench_config, res_summary))
+			for i in full_x_data:
+				saturation_bound = i
+				use_lp = False
+				bench_config = (bench_name, saturation_bound, use_lp)
 
-				x_data.append(i)
-				y_data.append(res_summary.total_time)
+				try:
+					res_summary = multiple_runs_and_summarize(bench_config, NUM_RUNS_SATURATION_SCALABILITY, timeout=SCALABILITY_TIMEOUT_SECONDS)
+					logger.info("Summary of %d runs of %s: %s" % (NUM_RUNS_SATURATION_SCALABILITY, bench_config, res_summary))
 
-			except subprocess.TimeoutExpired:
-				logger.info("Got timeout on %s" % str(bench_config))
-				break
+					w.writerow(dict_union({"name": bench_name, "depth": saturation_bound}, asdict(res_summary)))
+
+					x_data.append(i)
+					y_data.append(res_summary.total_time)
+
+				except subprocess.TimeoutExpired:
+					logger.info("Got timeout on %s" % str(bench_config))
+					break
 
 
-		success_depth, marker = BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL[bench_name]
-		success_x_index = full_x_data.index(success_depth)
+			success_depth, marker = BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL[bench_name]
+			success_x_index = full_x_data.index(success_depth)
 
-		plt.plot(x_data, y_data, linestyle='--', marker=marker, label=bench_name)
-		plt.plot(x_data[success_x_index], y_data[success_x_index], 'k'+marker, markersize=20, fillstyle='none', markeredgewidth=1.5)
+			plt.plot(x_data, y_data, linestyle='--', marker=marker, label=bench_name)
+			plt.plot(x_data[success_x_index], y_data[success_x_index], 'k'+marker, markersize=20, fillstyle='none', markeredgewidth=1.5)
 
-	plt.xticks(full_x_data, full_x_data) # TODO: adjust full_x_data, full_y_data automatically
-	plt.yticks(np.arange(0, SCALABILITY_TIMEOUT_SECONDS, SCALABILITY_TIMEOUT_SECONDS / 60 * 2)) 
-	plt.xlabel("saturation depth")
-	plt.ylabel("total time (s)")
-	plt.legend()
-	plt.savefig(OUTPUT_SATURATION_SCALABILITY_PLOT_PATH, bbox_inches='tight')
+			if detailed_csv:
+				pass
+
+		plt.xticks(full_x_data, full_x_data) # TODO: adjust full_x_data, full_y_data automatically
+		plt.yticks(np.arange(0, SCALABILITY_TIMEOUT_SECONDS, SCALABILITY_TIMEOUT_SECONDS / 60 * 2)) 
+		plt.xlabel("saturation depth")
+		plt.ylabel("total time (s)")
+		plt.legend()
+		plt.savefig(OUTPUT_SATURATION_SCALABILITY_PLOT_PATH, bbox_inches='tight')
+
+	logger.info("Start bench saturation depth scalability")
 
 def main():
 	set_logger()
-	bench_basic_table(also_nirn=True)
+	# bench_basic_table(also_nirn=True)
 	bench_saturation_depth_scalability(also_nirn=True)
 
 if __name__ == "__main__":
