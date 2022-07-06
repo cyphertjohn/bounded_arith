@@ -77,12 +77,12 @@ SATURATION_SCALABILITY_TABLE_HEADER = r"""\begin{table}
 	\centering
 	{\small \caption{\label{Ta:SatScaleConeSize}
             {\small
-            The size of the cone and run-time breakdown as the saturation depth is increased in each of the examples.
+            The size of the cone and run-time breakdown of each examples as the saturation depth is increased until a timeout of %(timeout)s minutes.
             \#c-eq and \#c-ineq are resp.\ the number of equalities/inequalities in the generated cone's ideal/polyhedron; \#m is the number of distinct monomials in the inequalities.
             time is the overall execution time of $\Tool$ (all times in seconds).
             csat is the time to saturate the cone. 
             reduce is the time to reduce w.r.t.\ the cone using local projection.
-            -- indicates a timeout (> 10 minutes).
+            -- indicates a timeout.
 	}}}
 """
 SATURATION_SCALABILITY_TABLE_TAIL = r"""\end{tabular}
@@ -306,7 +306,7 @@ def csv_to_saturation_depth_info_table():
 			result_summaries[(depth, name)] = experiment_summary_from_larger_dict(row)
 
 	with open(OUTPUT_SATURATION_SCALABILITY_TABLE_PATH, "wt") as f:
-		f.write(SATURATION_SCALABILITY_TABLE_HEADER)
+		f.write(SATURATION_SCALABILITY_TABLE_HEADER % {'timeout': SCALABILITY_TIMEOUT_SECONDS / 60})
 		f.write(r"\begin{tabular}{|| c | l |" + (r"| c " * len(depths)) + "|}")
 		f.write(r"\hline")
 		f.write(r"\multicolumn{2}{| c |}{\multirow{2}{*}{Benchmark}} & \multicolumn{" + str(len(depths)) + "}{ | c | }{Saturation depth}\n")
