@@ -73,19 +73,20 @@ OUTPUT_SATURATION_SCALABILITY_TABLE_PATH = "sat_size_table.tex"
 
 NUM_RUNS_SATURATION_SCALABILITY = 3
 
-SATURATION_SCALABILITY_TABLE_HEADER = r"""\begin{sidewaystable}
+SATURATION_SCALABILITY_TABLE_HEADER = r"""\begin{table}
 	\centering
 	{\small \caption{\label{Ta:SatScaleConeSize}
-            {\small \yf{work in progress}
+            {\small
             The size of the cone and run-time breakdown as the saturation depth is increased in each of the examples.
             \#c-eq and \#c-ineq are resp.\ the number of equalities/inequalities in the generated cone's ideal/polyhedron; \#m is the number of distinct monomials in the inequalities.
             time is the overall execution time of $\Tool$ (all times in seconds).
             csat is the time to saturate the cone. 
             reduce is the time to reduce w.r.t.\ the cone using local projection.
+            -- indicates a timeout (> 10 minutes).
 	}}}
 """
 SATURATION_SCALABILITY_TABLE_TAIL = r"""\end{tabular}
-\end{sidewaystable}"""
+\end{table}"""
 
 global logger
 
@@ -276,6 +277,22 @@ def str_time_to_str(s):
 	else:
 		return time_to_str(float(s))
 
+def res_summary_or_fake_if_not_present(result_summaries, depth, bench_name):
+	if (depth, bench_name) in result_summaries:
+		return result_summaries[(depth, bench_name)]
+	return ExperimentSummary(bench_config=(bench_name, depth, False),
+							nruns="-1",
+							csat_time=None,
+							reduce_time=None,
+							total_time=None,
+							cone_eqs="--",
+							cone_ineqs="--",
+							cone_monomials="--")
+
+def apply_to_all_depths_concat(bench_name, depths, result_summaries, fn):
+		return " & ".join(fn(res_summary_or_fake_if_not_present(result_summaries, depth, bench_name))
+						for depth in sorted(list(depths)))
+
 def csv_to_saturation_depth_info_table():
 	result_summaries = {}
 	depths = set()
@@ -290,52 +307,59 @@ def csv_to_saturation_depth_info_table():
 
 	with open(OUTPUT_SATURATION_SCALABILITY_TABLE_PATH, "wt") as f:
 		f.write(SATURATION_SCALABILITY_TABLE_HEADER)
-		f.write(r"\begin{tabular}{|| r " + (r"|| r | r | r | r | r | r " * len(BENCHMARKS)) + " || }")
+		f.write(r"\begin{tabular}{|| c | l |" + (r"| c " * len(depths)) + "|}")
+		f.write(r"\hline")
+		f.write(r"\multicolumn{2}{| c |}{\multirow{2}{*}{Benchmark}} & \multicolumn{" + str(len(depths)) + "}{ | c | }{Saturation depth}\n")
 		f.write("\\\\\n")
-		f.write("\\hline\n")
-
-		f.write(r"\multirow{2}{*}{sat}")
-		for bench_name, _, _ in BENCHMARKS:
-			f.write(" & ")
-			f.write(r"\multicolumn{6}{ c| }{" + bench_name + "}")
-		f.write("\\\\\n")
-
-		f.write((r" & $=$ & $\leq$ & $x^i$ & t & c & r" * len(BENCHMARKS)))
+		f.write(r"\cline{3-%d}" % (len(depths) + 2))
+		f.write(r"\multicolumn{2}{| c |}{} ")
+		for i in sorted(list(depths)):
+			f.write(" & " + i)
 		f.write("\\\\\n")
 		f.write("\\hline\\hline\n")
 
-
-		for depth in sorted(list(depths)):
-			f.write(depth)
-			for bench_name, _, _ in BENCHMARKS:
-				if (depth, bench_name) in result_summaries:
-					res_summary = result_summaries[(depth, bench_name)]
-				else:
-					res_summary = ExperimentSummary(bench_config=(name, depth, False),
-													nruns="-1",
-													csat_time=None,
-													reduce_time=None,
-													total_time=None,
-													cone_eqs="--",
-													cone_ineqs="--",
-													cone_monomials="--")
-
-				f.write(" & ")
-				f.write(str(res_summary.cone_eqs))
-				f.write(" & ")
-				f.write(str(res_summary.cone_ineqs))
-				f.write(" & ")
-				f.write(str(res_summary.cone_monomials))
-				f.write(" & ")
-				f.write(str_time_to_str(res_summary.total_time)) # str from csv
-				f.write(" & ")
-				f.write(str_time_to_str(res_summary.csat_time)) # str from csv
-				f.write(" & ")
-				f.write(str_time_to_str(res_summary.reduce_time)) # str from csv
-
+		for bench_name, _, _ in BENCHMARKS:				
+			f.write(r"\multirow{6}{*}{%s} &" % bench_name)
+			f.write(r"\#c-eq & ")
+			f.write(apply_to_all_depths_concat(bench_name, depths, result_summaries, 
+					lambda res_summary: str(res_summary.cone_eqs)))
 			f.write("\\\\\n")
-			f.write("\\hline\n")
-			f.write("\n")
+			f.write("\\cline{2-%d}\n" % (len(depths) + 2))
+
+			f.write(" & ")
+			f.write(r"\#c-ineq & ")
+			f.write(apply_to_all_depths_concat(bench_name, depths, result_summaries, 
+					lambda res_summary: str(res_summary.cone_ineqs)))
+			f.write("\\\\\n")
+			f.write("\\cline{2-%d}\n" % (len(depths) + 2))
+
+			f.write(" & ")
+			f.write(r" \#m & ")
+			f.write(apply_to_all_depths_concat(bench_name, depths, result_summaries, 
+					lambda res_summary: str(res_summary.cone_monomials)))
+			f.write("\\\\\n")
+			f.write("\\cline{2-%d}\n" % (len(depths) + 2))
+
+			f.write(" & ")
+			f.write(r" time & ")
+			f.write(apply_to_all_depths_concat(bench_name, depths, result_summaries, 
+					lambda res_summary: str_time_to_str(res_summary.total_time))) # str from csv
+			f.write("\\\\\n")
+			f.write("\\cline{2-%d}\n" % (len(depths) + 2))
+
+			f.write(" & ")
+			f.write(r" csat & ")
+			f.write(apply_to_all_depths_concat(bench_name, depths, result_summaries, 
+					lambda res_summary: str_time_to_str(res_summary.csat_time))) # str from csv
+			f.write("\\\\\n")
+			f.write("\\cline{2-%d}\n" % (len(depths) + 2))
+
+			f.write(" & ")
+			f.write(r" reduce & ")
+			f.write(apply_to_all_depths_concat(bench_name, depths, result_summaries, 
+					lambda res_summary: str_time_to_str(res_summary.reduce_time))) # str from csv
+			f.write("\\\\\n")
+			f.write("\\hline\\hline\n")
 
 		f.write(SATURATION_SCALABILITY_TABLE_TAIL)
 
