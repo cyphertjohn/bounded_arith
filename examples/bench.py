@@ -19,7 +19,7 @@ NUM_RUNS_BASIC_TABLE = 3
 NIRN_NAME = "nirn"
 
 BENCHMARKS = [
-	("elastic", ["5", "3", "3", "8", "814", "413"], []),
+	# ("elastic", ["5", "3", "3", "8", "814", "413"], []),
 	("fixedPointInt", ["0", "2", "2", "2", "162", "131"], []),
 	("manualPrice", ["3", "4", "1", "4", "163", "168"], []),
 	("manualPriceMonotone", ["6", "5", "2", "8", "218", "228"], []),
@@ -56,7 +56,7 @@ BASIC_TABLE_TAIL_LATEX = r"""\end{tabular}
 
 SATURATION_SCALABILITY_MAX_BOUND = 20
 # SCALABILITY_TIMEOUT_SECONDS = 5
-SCALABILITY_TIMEOUT_SECONDS = 15 * 60
+SCALABILITY_TIMEOUT_SECONDS = 10 * 60
 
 BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL = {
 	"elastic": (3, "o"),
@@ -69,8 +69,23 @@ BENCHMARKS_SATURATION_SCALABILITY_GRAPHICS_CONTROL = {
 
 OUTPUT_SATURATION_SCALABILITY_PLOT_PATH = "saturation_scalability.pdf"
 OUTPUT_SATURATION_SCALABILITY_CSV_PATH = "saturation_scalability.csv"
+OUTPUT_SATURATION_SCALABILITY_TABLE_PATH = "sat_size_table.tex"
 
 NUM_RUNS_SATURATION_SCALABILITY = 3
+
+SATURATION_SCALABILITY_TABLE_HEADER = r"""\begin{sidewaystable}
+	\centering
+	{\small \caption{\label{Ta:SatScaleConeSize}
+            {\small \yf{work in progress}
+            The size of the cone and run-time breakdown as the saturation depth is increased in each of the examples.
+            \#c-eq and \#c-ineq are resp.\ the number of equalities/inequalities in the generated cone's ideal/polyhedron; \#m is the number of distinct monomials in the inequalities.
+            time is the overall execution time of $\Tool$ (all times in seconds).
+            csat is the time to saturate the cone. 
+            reduce is the time to reduce w.r.t.\ the cone using local projection.
+	}}}
+"""
+SATURATION_SCALABILITY_TABLE_TAIL = r"""\end{tabular}
+\end{sidewaystable}"""
 
 global logger
 
@@ -127,7 +142,6 @@ def get_cone_size_from_log(output):
 	match = re.search(r"Cone size: Num eqs: (\d+)\\n\s*Num ineqs: (\d+)\\n\s*Num of unique mons in ineqs: (\d+)", output)
 	# match = re.search(r"Cone size: Num eqs: (\d+)\\n\s*Num ineqs:", output)
 	if not match:
-		assert False, output
 		return -1, -1, -1
 	return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
@@ -244,9 +258,6 @@ def bench_saturation_depth_scalability(also_nirn=True):
 			plt.plot(x_data, y_data, linestyle='--', marker=marker, label=bench_name)
 			plt.plot(x_data[success_x_index], y_data[success_x_index], 'k'+marker, markersize=20, fillstyle='none', markeredgewidth=1.5)
 
-			if detailed_csv:
-				pass
-
 		plt.xticks(full_x_data, full_x_data) # TODO: adjust full_x_data, full_y_data automatically
 		plt.yticks(np.arange(0, SCALABILITY_TIMEOUT_SECONDS, SCALABILITY_TIMEOUT_SECONDS / 60 * 2)) 
 		plt.xlabel("saturation depth")
@@ -256,10 +267,83 @@ def bench_saturation_depth_scalability(also_nirn=True):
 
 	logger.info("Start bench saturation depth scalability")
 
+def experiment_summary_from_larger_dict(d):
+	return ExperimentSummary(**{k: d[k] for k in (f.name for f in fields(ExperimentSummary))})
+
+def str_time_to_str(s):
+	if not s:
+		return "--"
+	else:
+		return time_to_str(float(s))
+
+def csv_to_saturation_depth_info_table():
+	result_summaries = {}
+	depths = set()
+
+	with open(OUTPUT_SATURATION_SCALABILITY_CSV_PATH, "r") as csv_log:
+		csv_dict_reader = csv.DictReader(csv_log)
+		for row in csv_dict_reader:
+			name = row['name']
+			depth = row['depth']
+			depths.add(depth)
+			result_summaries[(depth, name)] = experiment_summary_from_larger_dict(row)
+
+	with open(OUTPUT_SATURATION_SCALABILITY_TABLE_PATH, "wt") as f:
+		f.write(SATURATION_SCALABILITY_TABLE_HEADER)
+		f.write(r"\begin{tabular}{|| r " + (r"|| r | r | r | r | r | r " * len(BENCHMARKS)) + " || }")
+		f.write("\\\\\n")
+		f.write("\\hline\n")
+
+		f.write(r"\multirow{2}{*}{sat}")
+		for bench_name, _, _ in BENCHMARKS:
+			f.write(" & ")
+			f.write(r"\multicolumn{6}{ c| }{" + bench_name + "}")
+		f.write("\\\\\n")
+
+		f.write((r" & $=$ & $\leq$ & $x^i$ & t & c & r" * len(BENCHMARKS)))
+		f.write("\\\\\n")
+		f.write("\\hline\\hline\n")
+
+
+		for depth in sorted(list(depths)):
+			f.write(depth)
+			for bench_name, _, _ in BENCHMARKS:
+				if (depth, bench_name) in result_summaries:
+					res_summary = result_summaries[(depth, bench_name)]
+				else:
+					res_summary = ExperimentSummary(bench_config=(name, depth, False),
+													nruns="-1",
+													csat_time=None,
+													reduce_time=None,
+													total_time=None,
+													cone_eqs="--",
+													cone_ineqs="--",
+													cone_monomials="--")
+
+				f.write(" & ")
+				f.write(str(res_summary.cone_eqs))
+				f.write(" & ")
+				f.write(str(res_summary.cone_ineqs))
+				f.write(" & ")
+				f.write(str(res_summary.cone_monomials))
+				f.write(" & ")
+				f.write(str_time_to_str(res_summary.total_time)) # str from csv
+				f.write(" & ")
+				f.write(str_time_to_str(res_summary.csat_time)) # str from csv
+				f.write(" & ")
+				f.write(str_time_to_str(res_summary.reduce_time)) # str from csv
+
+			f.write("\\\\\n")
+			f.write("\\hline\n")
+			f.write("\n")
+
+		f.write(SATURATION_SCALABILITY_TABLE_TAIL)
+
 def main():
 	set_logger()
 	# bench_basic_table(also_nirn=True)
-	bench_saturation_depth_scalability(also_nirn=True)
+	# bench_saturation_depth_scalability(also_nirn=True)
+	csv_to_saturation_depth_info_table()
 
 if __name__ == "__main__":
 	main()
