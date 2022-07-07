@@ -32,7 +32,7 @@ OUTPUT_BASIC_TABLE_PATH = "basic_table.tex"
 BASIC_TABLE_HEADER_LATEX = r"""\begin{table}[t!]
 	\centering
 	{\small \caption{\label{Ta:Rewriting}
-            {\small This table displays the results of the running the system on the examples. 
+            {\small Performance of \Tool on the examples.  
             \#eq and \#ineq's are resp.\ equality and inequality assumptions initially given (not including instantiated axioms);
             \#floors is the number of integer divisions (floor of division) terms in the assumptions.
             \#c-eq and \#c-ineq are resp.\ the number of equalities/inequalities in the generated cone's ideal/polyhedron; \#m is the number of distinct monomials in the inequalities.
