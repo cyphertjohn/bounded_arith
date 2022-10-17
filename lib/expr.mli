@@ -14,11 +14,11 @@ val minus : qexpr -> qexpr -> qexpr
 
 val mult : qexpr -> qexpr -> qexpr
 
-val exp : qexpr -> int -> qexpr
+val exp : qexpr -> qexpr -> qexpr
 
 val div : qexpr -> qexpr -> qexpr
 
-val floor : qexpr -> qexpr
+val func : string -> qexpr -> qexpr
 
 (** Automatically simplify an expression. See Joel S. Cohen {i Computer Algebra and Symbolic Computation:Mathematical Methods} for more details. *)
 val simplify : qexpr -> qexpr

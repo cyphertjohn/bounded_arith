@@ -24,11 +24,9 @@ sig
 
   val poly_to_z3 : Z3.context -> polyhedron -> Z3.Expr.expr
 
-  val convex_hull : Z3.context -> Z3.Solver.solver -> polyhedron
+  (*val convex_hull : Z3.context -> Z3.Solver.solver -> polyhedron*)
 
-  val saturate : Z3.context -> Z3.Solver.solver -> lterm list -> lterm list -> lterm list -> Z3.Expr.expr -> int list * lterm list * lterm list
-
-  val saturate_c : Z3.context -> Z3.Solver.solver -> lterm list -> lterm list -> lterm list -> Z3.Expr.expr -> lterm list -> int list * lterm list * lterm list
+  val saturate_c : Z3.context -> Z3.Solver.solver -> lterm list -> lterm list -> lterm list -> Z3.Expr.expr -> lterm Sigs.Form.form list -> int list * lterm list * lterm list * lterm list
 
   val optimize_t : ?use_proj:bool -> lterm -> V.v -> V.v list -> polyhedron -> Z3.context -> Z3.Solver.solver -> lterm list * lterm list
 

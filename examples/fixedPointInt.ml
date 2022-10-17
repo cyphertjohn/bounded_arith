@@ -7,10 +7,9 @@ let () = Bound.Log.log_times := true
 
 let () = SymBoundBenchmark.process_cmdline ()
 let sat_bound = SymBoundBenchmark.sat_bound ()
-let compute_hull = SymBoundBenchmark.compute_hull ()
 let use_proj = not (SymBoundBenchmark.use_lp ())
 
-let rewrites = Bound.Log.log_time "Rewrite mult/div total" (Bound.Rewriter.rewrite ~use_proj:use_proj ~sat:sat_bound ~compute_hull:compute_hull [] 
+let rewrites = Bound.Log.log_time "Rewrite mult/div total" (Bound.Rewriter.rewrite ~use_proj:use_proj ~sat:sat_bound [] 
 									  [
 										from_string "sf";
 										from_string "b";

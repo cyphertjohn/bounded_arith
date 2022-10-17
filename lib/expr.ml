@@ -2,10 +2,20 @@ open Sigs.Expr
 
 type qexpr = Sigs.Q.coef expr
 
+let is_zero e = 
+  match e with
+  | Coe c when Sigs.Q.is_zero c -> true
+  | _ -> false
+
+let is_one e = 
+  match e with
+  | Coe c when Sigs.Q.is_one c -> true
+  | _ -> false
+
 let rec cmp a b = 
   match (a, b) with
   | (Coe a_v, Coe b_v) ->		(* O-1 *)
-    compare a_v b_v
+    Sigs.Q.cmp a_v b_v
   | (Var x, Var y) -> compare x y
   | (Add a_list, Add b_list) | (Mult a_list, Mult b_list) ->
     let a_rev = List.rev a_list in
@@ -22,13 +32,15 @@ let rec cmp a b =
   | (Pow (a_bas, a_exp), Pow (b_bas, b_exp)) ->
     if (cmp a_bas b_bas) <> 0 then				(* O-4-1 *)
       cmp a_bas b_bas
-    else compare a_exp b_exp			(* O-4-2 *)
-  | (Floor x, Floor y) ->
+    else cmp a_exp b_exp			(* O-4-2 *)
+  | (Func (s1, x), Func (s2, y)) when s1 = s2 ->
     cmp x y
+  | (Func (s1, _), Func (s2, _)) when s1 <> s2 -> 
+    compare s1 s2
   | (Div (xn, xd), _) ->
-    cmp (Mult [xn; Pow(xd, -1)]) b
+    cmp (Mult [xn; Pow(xd, Coe (Sigs.Q.of_int (-1)))]) b
   | (_, Div (yn, yd)) ->
-    cmp a (Mult [yn; Pow (yd, -1)])
+    cmp a (Mult [yn; Pow (yd, Coe (Sigs.Q.of_int (-1)))])
   | (Coe _, _) -> (-1)				(* O-7 *)
   | (_, Coe _) -> (1)
   | (Mult _, _) ->
@@ -36,11 +48,11 @@ let rec cmp a b =
   | ( _, Mult _)  ->	
     cmp (Mult [a]) b			(* O-8 *)
   | (Pow _, _) ->
-    cmp a (Pow (b, 1))	(* O-9 *)
+    cmp a (Pow (b, Coe (Sigs.Q.of_int 1)))	(* O-9 *)
   | (_, Pow _) ->
-    cmp (Pow (a, 1)) b	(* O-9 *)
-  | (Floor _, _) -> 1
-  | (_, Floor _) -> (-1)
+    cmp (Pow (a, Coe (Sigs.Q.of_int 1))) b	(* O-9 *)
+  | (Func _, _) -> 1
+  | (_, Func _) -> (-1)
   | (Add _, _) ->
     cmp a (Add [b])				(* O-10 *)
   | (_, Add _) ->
@@ -58,7 +70,7 @@ let exponent expr =
   | Pow (_, exp) ->
     exp
   | _ ->
-    1
+    Coe (Sigs.Q.of_int 1)
     
 let term expr = 
   match expr with
@@ -189,7 +201,7 @@ and simplify_product_rec expr_list =
       let u_2base = base u_2 in
       let u_2exp = exponent u_2 in
       if (cmp u_1base u_2base) = 0 then
-        let s = u_1exp + u_2exp in 
+        let s = simplify_sum [u_1exp; u_2exp] in 
         let p = simplify_power u_1base s in
         (match p with 
         | Coe rat when Sigs.Q.is_one rat -> []
@@ -244,11 +256,11 @@ and simplify_product expr_list =
 
 (* input is expr and an Mpq.t int *)
 and simplify_power base n =
-  if n = 0 then Coe (Sigs.Q.from_string_c "1")
-  else if n = 1 then base
+  if is_zero n then Coe (Sigs.Q.from_string_c "1")
+  else if is_one n then base
   else
-    match base with
-    | Coe rat ->	(* SINTPOW-1 *)
+    match base, n with
+    | Coe rat, Coe rat_n ->	(* SINTPOW-1 *)
       let rec exp_by_squaring acc x n =
         if n < 0 then exp_by_squaring acc (Sigs.Q.divc (Sigs.Q.from_string_c "1") x) ((-1)*n)
         else if n = 0 then acc
@@ -262,10 +274,12 @@ and simplify_power base n =
             let x_by_y = Sigs.Q.mulc x acc in
             exp_by_squaring x_by_y x_sqr n_div2
       in
-      Coe (exp_by_squaring (Sigs.Q.from_string_c "1") rat n)
-    | Pow (r, s) ->	(* SINTPOW-4 *)
-      simplify_power r (s * n)
-    | Mult expr_list ->				(*SINTPOW-5*)
+      (match Sigs.Q.to_int rat_n with
+      | Some i ->  Coe (exp_by_squaring (Sigs.Q.from_string_c "1") rat i)
+      | None -> Pow (base, n)) (* Could eval non int power*)
+    | Pow (r, s), _ ->	(* SINTPOW-4 *)
+      simplify_power r (simplify_product [s; n])
+    | Mult expr_list, _ ->				(*SINTPOW-5*)
       simplify_product (List.map (fun expr_list_elem -> (simplify_power expr_list_elem n)) expr_list)
     | _ ->
       Pow (base, n)
@@ -275,12 +289,12 @@ let simplify_divide num denom =
   | Coe rat when Sigs.Q.is_zero rat ->
       failwith "Division by 0!"
   | _ ->
-      simplify_product (num :: (simplify_power denom (-1)) :: [])
+      simplify_product (num :: (simplify_power denom (Coe (Sigs.Q.of_int (-1)))) :: [])
 
 let simplify_floor x =
   match x with
   | Coe rat -> Coe (Sigs.Q.floor rat)
-  | _ -> Floor x
+  | _ -> Func ("floor", x)
 
 (** Automatically simplify an expression bottom up *)
 let rec simplify expr = 
@@ -298,9 +312,10 @@ let rec simplify expr =
     let simplified_num = simplify num in
     let simplified_denom = simplify denom in
     simplify_divide simplified_num simplified_denom
-  | Floor x -> 
+  | Func ("floor", x) -> 
     let simp_x = simplify x in
     simplify_floor simp_x
+  | Func (s, x) -> Func (s, simplify x)
 
 let rec qify e =
   match e with
@@ -309,8 +324,8 @@ let rec qify e =
   | Add l -> Add (List.map qify l)
   | Mult l -> Mult (List.map qify l)
   | Div (n, d) -> Div (qify n, qify d)
-  | Pow (b, e) -> Pow (qify b, e)
-  | Floor x -> Floor (qify x)
+  | Pow (b, e) -> Pow (qify b, qify e)
+  | Func (s, x) -> Func (s, qify x)
 
 let distribute a = 
   let rec aux e =
@@ -332,18 +347,31 @@ let distribute a =
     | Div(n, d) -> simplify (Div (aux n, aux d))
     | Pow (b, e) -> 
       let dist_b = aux b in
-      if e = 0 then Coe (Sigs.Q.from_string_c "1")
-      else if e = 1 then dist_b
+      if is_zero e then Coe (Sigs.Q.from_string_c "1")
+      else if is_one e then dist_b
       else
-        (match dist_b with
-        | Add _ -> 
-          let rec replicate acc2 dupes =
-            if dupes <= 0 then acc2
-            else replicate (dist_b :: acc2) (dupes - 1)
-          in
-          aux (Mult (replicate [] e))
-        | _ -> simplify (Pow(dist_b , e)))
-    | Floor x -> simplify (Floor (aux x))
+        (match e with
+        | Coe c -> 
+          (match Sigs.Q.to_int c with
+          | Some i ->
+            (match dist_b with
+            | Add _ -> 
+              let rec replicate acc2 dupes =
+                if dupes <= 0 then acc2
+                else replicate (dist_b :: acc2) (dupes - 1)
+              in
+              aux (Mult (replicate [] i))
+            | _ -> 
+              let dist_e = aux e in
+              simplify (Pow(dist_b , dist_e)))
+          | None ->
+            let dist_e = aux e in
+            simplify (Pow(dist_b , dist_e)))
+        | _ -> 
+          let dist_e = aux e in
+          simplify (Pow (dist_b, dist_e))
+          )
+    | Func (s, x) -> simplify (Func (s, aux x))
   in
   aux a
 
@@ -362,7 +390,7 @@ let rec to_string e =
           | Mult l1 -> mult_to_string l1
           | Div (n, d) -> div_to_string n d
           | Pow (b, e) -> pow_to_string b e
-          | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+          | Func (s, x) -> s ^ "(" ^ (to_string x) ^ ")", false
         in
         if first && negative then
           "-" ^ str, false
@@ -385,7 +413,7 @@ let rec to_string e =
         | Mult l1 -> mult_to_string l1
         | Div (n, d) -> div_to_string n d
         | Pow (b, e) -> pow_to_string b e
-        | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+        | Func (s, x) -> s ^ "(" ^ (to_string x) ^ ")", false
       in
       (acc ^ str, parity <> negative)
     in
@@ -403,7 +431,7 @@ let rec to_string e =
       | Mult l -> let m_s, m_n = mult_to_string l in "(" ^ m_s ^ ")", m_n
       | Pow (b, e) -> pow_to_string b e
       | Div (np, dp) -> div_to_string np dp
-      | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+      | Func (s, x) -> s ^ "(" ^ (to_string x) ^ ")", false
     in
     let (d_str, dneg) =
       match d with 
@@ -413,17 +441,17 @@ let rec to_string e =
       | Mult l -> let m_s, m_n = mult_to_string l in "(" ^ m_s ^ ")", m_n
       | Pow (b, e) -> pow_to_string b e
       | Div (np, dp) -> let d_s, d_n = div_to_string np dp in "(" ^ d_s ^ ")", d_n
-      | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+      | Func (s, x) -> s ^ "(" ^ (to_string x) ^ ")", false
     in
     n_str ^ "/" ^ d_str, nneg <> dneg
   and pow_to_string b e =
     match b with
     | Coe x -> 
       let (x_s, x_n) = coe_to_string x in
-      if x_n then "(-" ^ x_s ^ ")^" ^ (string_of_int e), false
-      else x_s ^ "^" ^ (string_of_int e), false
-    | Var x -> (fst (var_to_string x)) ^ "^" ^ (string_of_int e), false
-    | _ -> "(" ^ (to_string b) ^ ")^" ^ (string_of_int e), false
+      if x_n then "(-" ^ x_s ^ ")^" ^ (to_string e), false
+      else x_s ^ "^" ^ (to_string e), false
+    | Var x -> (fst (var_to_string x)) ^ "^" ^ (to_string e), false
+    | _ -> "(" ^ (to_string b) ^ ")^" ^ (to_string e), false
   in
   let (str, negative) = 
     match e with
@@ -433,7 +461,7 @@ let rec to_string e =
     | Mult l -> mult_to_string l
     | Div (n, d) -> div_to_string n d
     | Pow (b, e) -> pow_to_string b e
-    | Floor x -> "floor(" ^ (to_string x) ^ ")", false
+    | Func (s, x) -> s ^ "(" ^ (to_string x) ^ ")", false
   in
   if negative then "-" ^ str
   else str
@@ -446,7 +474,7 @@ let from_var v i =
   if i = 0 then Coe (Sigs.Q.from_string_c "1") 
   else if i = 1 then Var v
   else 
-    Pow (Var v, i)
+    Pow (Var v, Coe (Sigs.Q.of_int i))
 
 let add a b = Add [a;b]
 
@@ -461,4 +489,4 @@ let exp a i = Pow(a, i)
 
 let div a b = Div(a, b)
 
-let floor a = Floor a
+let func s a = Func (s, a)

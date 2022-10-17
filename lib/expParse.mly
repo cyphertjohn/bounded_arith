@@ -20,9 +20,9 @@
           | term                            { $1 }
         ;
         term :
-          | FLOOR LPAREN expr RPAREN        { Sigs.Expr.Floor ($3) }
+          | FLOOR LPAREN expr RPAREN        { Sigs.Expr.Func ("floor", $3) }
           | LPAREN expr RPAREN              { $2 }
-          | LPAREN expr RPAREN POWER INT    { Sigs.Expr.Pow ($2, int_of_string $5) }
+          | LPAREN expr RPAREN POWER INT    { Sigs.Expr.Pow ($2, Sigs.Expr.Coe $5) }
           | term DIV INT /*%prec DIV */         { Sigs.Expr.Div ($1, Sigs.Expr.Coe $3) }
           | term DIV VAR /*%prec DIV*/          { Sigs.Expr.Div ($1, Sigs.Expr.Var $3) }
           | term DIV LPAREN expr RPAREN     { Sigs.Expr.Div ($1, $4) }
@@ -32,8 +32,8 @@
           | varpow                          { $1 }
         ;
         varpow :
-          | VAR POWER INT                     { Sigs.Expr.Pow (Sigs.Expr.Var $1, int_of_string $3) }
-          | INT POWER INT                     { Sigs.Expr.Pow (Sigs.Expr.Coe $1, int_of_string $3) }
+          | VAR POWER INT                     { Sigs.Expr.Pow (Sigs.Expr.Var $1, Sigs.Expr.Coe $3) }
+          | INT POWER INT                     { Sigs.Expr.Pow (Sigs.Expr.Coe $1, Sigs.Expr.Coe $3) }
           | VAR                             { Sigs.Expr.Var $1 }
           | INT                             { Sigs.Expr.Coe $1 }
         ;

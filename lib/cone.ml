@@ -40,9 +40,13 @@ module Make(P : Poly.Polynomial) = struct
 
   type derJust = eqJust * posCom*)
 
-  type justification = 
-   | Product of int list
-   | Given
+  type ineq =
+    {
+      dm : C.coef MM.map;
+      d : int;
+      prod : int list;
+      is_strict : bool
+    }
 
   type cone = 
     {
@@ -50,12 +54,11 @@ module Make(P : Poly.Polynomial) = struct
       depth : int;
       closure : Cl.closure;
       curr_poly : int;
-      ineqs : ((C.coef MM.map) * justification) IM.t;
-      ineqs_prod : int list list list
+      ineqs : ineq IM.t;
     }
 
   let make_empty_cone depth closure =
-    {z3ctx = Z3.mk_context []; depth; closure; curr_poly = 0; ineqs = IM.empty; ineqs_prod = []}
+    {z3ctx = Z3.mk_context []; depth; closure; curr_poly = 0; ineqs = IM.empty}
 
 
   let poly_to_dim p =
@@ -71,11 +74,15 @@ module Make(P : Poly.Polynomial) = struct
 
   (*let get_eq_basis c = I.get_generators c.ideal*)
 
-  let get_ineq_basis c = 
-    if List.length c.ineqs_prod = 0 then [from_const_s "0"]
-    else
-      let first_level = List.map List.hd (List.hd c.ineqs_prod) in
-      List.map (fun i -> (dim_to_poly (fst (IM.find i c.ineqs)))) first_level
+  (*let get_ineq_basis c = 
+    let basis = IM.fold (fun _ ineq b -> if ineq.d = 1 then ineq :: b else b) c.ineqs [] in
+    basis*)
+
+  let pp_ine ord f ine = 
+    Format.pp_open_hbox f (); pp f ~ord:ord (dim_to_poly ine.dm);
+    if ine.is_strict then Format.pp_print_string f " > 0"
+    else Format.pp_print_string f " >=0 ";
+    Format.pp_close_box f ()
 
 
   let ppc f c = 
@@ -84,36 +91,56 @@ module Make(P : Poly.Polynomial) = struct
       Format.pp_force_newline f ();
       if IM.is_empty c.ineqs then Format.pp_print_string f "Ineqs: [0]"
       else
-        Format.pp_open_hbox f ();
+        ((*Format.pp_open_hbox f ();
         Format.pp_print_string f "Basis Ineqs:";
         Format.print_space ();
         Format.pp_print_string f "["; 
-        Format.pp_open_box f 0;
-        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:(Cl.get_ord c.closure)) f (get_ineq_basis c);
+        Format.pp_open_vbox f 4;
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp_ine (Cl.get_ord c.closure)) f (get_ineq_basis c);
         Format.pp_print_string f "]";
-        Format.pp_close_box f (); Format.pp_close_box f ()(*
+        Format.pp_close_box f (); Format.pp_close_box f ();
         Format.pp_force_newline f ();
+        Format.pp_open_hbox f ();*)
         Format.pp_open_hbox f ();
-        Format.pp_print_string f "Derived Ineqs:";
+        Format.pp_open_vbox f 4;
+        Format.pp_print_string f "Ineqs:";
         Format.print_space ();
         Format.pp_print_string f "["; 
         Format.pp_open_box f 0;
-        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp ~ord:c.ideal.ord) f (BatList.of_enum (BatEnum.map (fun (_, _, (i, _)) -> dim_to_poly c i) (BatIMap.enum c.ineqs)));
+        let pp_ine_id fo (id, ine) = 
+          Format.pp_open_hbox fo ();
+          Format.pp_print_int fo id;
+          Format.pp_print_string fo ": ";
+          pp_ine (Cl.get_ord c.closure) fo ine;
+          Format.pp_close_box fo ()
+        in
+        Format.pp_print_list ~pp_sep: (fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp_ine_id) f (BatList.of_enum ( (IM.enum c.ineqs)));
         Format.pp_print_string f "]";
-        Format.pp_close_box f (); Format.pp_close_box f ()*)
+        Format.pp_close_box f (); Format.pp_close_box f ())
 
 
   (*type cone = int * I.ideal * poly list list*)
 
-  let is_const_not_neg p = 
-    match is_const p with
-    | Some c ->
-      if C.cmp c C.zero >= 0 then Some c
-      else None
-    | None -> None
 
 
-  let upgrade_ineqs c ineqs_to_upgrade = 
+  let reduce_ineqs c = 
+    let folder id ineq (new_ineqs, modified) = 
+      let ineq_red, redocc = Cl.reduce (dim_to_poly ineq.dm) c.closure in
+      match is_const ineq_red with 
+      | None -> 
+        if redocc then IM.add id {ineq with dm = poly_to_dim ineq_red} new_ineqs, id :: modified
+        else IM.add id ineq new_ineqs, modified
+      | Some c ->
+        let c_cmp = C.cmp c C.zero in
+        if c_cmp < 0 then failwith "Created a contradiction. An assumption is less than 0"
+        else if c_cmp = 0 && ineq.is_strict then failwith "Created a contradiction. A strict assumption is equal to 0"
+        else new_ineqs, modified
+    in
+    let new_ines, modified = IM.fold folder c.ineqs (IM.empty, []) in
+    {c with ineqs = new_ines}, modified
+
+
+  let upgrade_ineqs c ineqs_to_upgrade eqs_to_add = 
     let is_factor a b = 
       let rec aux xl yl = 
         match xl, yl with
@@ -128,211 +155,72 @@ module Make(P : Poly.Polynomial) = struct
       aux a b
     in
     let ineqs_to_prods lis = List.map (fun id -> 
-      match IM.find id c.ineqs with
-      | (_, Given) -> [id]
-      | (_, Product l) -> l
+      let ine =  IM.find id c.ineqs in
+      ine.prod
     ) lis in
     let ineqs_to_upgrade_prods = ineqs_to_prods ineqs_to_upgrade in
-    let collect_ineqs_to_remove id (_, just) to_remove = 
-      match just with
-      | Product prods ->
-        if List.exists (fun remove_pset -> is_factor remove_pset prods) ineqs_to_upgrade_prods then id :: to_remove
-        else to_remove
-      | _ -> to_remove
+    let collect_ineqs_to_remove id ineq to_remove = 
+      if List.exists (fun remove_pset -> is_factor remove_pset ineq.prod) ineqs_to_upgrade_prods then
+        if ineq.is_strict then failwith "Reduced a strict ineq to 0. I.e 0 > 0"
+        else id :: to_remove
+      else to_remove
     in
     let ineqs_to_remove = IM.fold collect_ineqs_to_remove c.ineqs ineqs_to_upgrade in
     let new_ineqs = List.fold_left (fun m i -> IM.remove i m) c.ineqs ineqs_to_remove in
-    let new_eqs = List.map (fun id -> dim_to_poly (fst (IM.find id c.ineqs))) ineqs_to_upgrade in
-    let new_cl = Cl.add_eqs new_eqs c.closure in
-    let folder id (ineq, just) (map, remove, modified) = 
-      let (new_red, red_occ), new_just = 
-        match just with
-        | Product prod_list -> 
-          let p_red = Cl.reduce (dim_to_poly ineq) new_cl in
-          p_red, Product prod_list
-        | Given -> 
-          let p_red = Cl.reduce (dim_to_poly ineq) new_cl in
-          p_red, Given 
-      in
-      match is_const new_red with
-      | None -> 
-        if red_occ then IM.add id (poly_to_dim new_red, new_just) map, remove, id :: modified
-        else IM.add id (poly_to_dim new_red, new_just) map, remove, modified
-      | Some c ->
-        if C.cmp c C.zero >= 0 then (map, id :: remove, modified)
-        else failwith "Created a contradiction"
-    in
-    let red_ineqs, is_to_remove, modified = IM.fold folder new_ineqs (IM.empty, ineqs_to_remove, []) in
-    let is_to_remove_prod = ineqs_to_prods is_to_remove in
-    let new_ineq_prod = List.map (fun pll -> List.filter (fun pl -> not (List.exists (fun r -> is_factor r pl) is_to_remove_prod)) pll) c.ineqs_prod in
-    {c with closure = new_cl; ineqs = red_ineqs; ineqs_prod = new_ineq_prod}, modified
-
+    let new_eqs = List.map (fun id -> dim_to_poly (IM.find id c.ineqs).dm) ineqs_to_upgrade in
+    let new_cl = Cl.add_eqs (new_eqs @ eqs_to_add) c.closure in
+    reduce_ineqs {c with closure = new_cl; ineqs = new_ineqs}
 
 
   (* This function doesn't check whether incoming ine is already a member of the linear cone. Could consider an alternative*)
-  let add_ineq c ine just : (cone * int list) = 
-    let mult_and_minimize_ineqs (ineqs, curr_id) ins_to_add = 
-      let reduce_and_just (inequs, id) prod = 
-        let p = List.fold_left (fun acc ind -> mul acc (dim_to_poly (fst (IM.find ind inequs)))) (from_const C.one) prod in
-        let p_red, _ = Cl.reduce p c.closure in
-        match is_const_not_neg p_red with
-        | Some _ -> inequs, id
-        | None ->
-          let new_ineqs = IM.add id (poly_to_dim p_red, Product prod) inequs in
-          new_ineqs, (id + 1)
-      in
-      List.fold_left reduce_and_just (ineqs, curr_id) ins_to_add
-    in
-    if not (is_const_not_neg ine = None) then c, []
-    else if IM.is_empty c.ineqs then 
-      let poly_id = c.curr_poly in
-      let rec dup v t = if t <=0 then [] else v :: (dup v (t-1)) in
-      let rec aux acc depth = 
-        if depth <= 0 then acc
-        else 
-          aux ([dup poly_id depth] :: acc) (depth - 1)
-      in
-      let ineq_ladder = aux [] c.depth in
-      let prod_to_comput = List.concat (List.tl ineq_ladder) in
-      let ine_map = poly_to_dim ine in
-      let ineqs, next_id = mult_and_minimize_ineqs ((IM.add poly_id (ine_map, just) IM.empty), poly_id + 1) prod_to_comput in
-      {c with curr_poly = next_id; ineqs; ineqs_prod = ineq_ladder}, List.init (next_id - poly_id) (fun i -> poly_id + i)
-    else 
-      let poly_id = c.curr_poly in
-      let folder (all_ineq, new_ineqs) curr_level = 
-        if List.length all_ineq = 0 then [[poly_id] :: curr_level], new_ineqs
-        else
-          let prev_level = List.hd all_ineq in
-          let new_ineq = List.map (fun p -> poly_id :: p) prev_level in
-          (new_ineq @ curr_level) :: all_ineq, new_ineq @ new_ineqs
-      in
-      let ineqs_with_ine = IM.add poly_id (poly_to_dim ine, just) c.ineqs in
-      let ineqs_ladder, ineqs_to_add = List.fold_left folder ([], []) c.ineqs_prod in
-      let ineqs, next_id = mult_and_minimize_ineqs (ineqs_with_ine, poly_id + 1) ineqs_to_add in
-      {c with curr_poly = next_id; ineqs; ineqs_prod = List.rev ineqs_ladder}, List.init (next_id - poly_id) (fun i -> poly_id + i)
-
-
-  (*
-  let find_cons ctx solver pot_cons biggest_flag_num = 
-    (*Z3.Solver.push solver;*)
-    let pot_cons_with_flags = List.mapi (fun i c -> (i, Z3.Boolean.mk_const_s ctx ("b" ^ (string_of_int (i + biggest_flag_num))), c)) pot_cons in
-    let round_f = Z3.Boolean.mk_const_s ctx ("r" ^ (string_of_int biggest_flag_num)) in
-    Z3.Solver.add solver [Z3.Boolean.mk_implies ctx round_f (Z3.Boolean.mk_not ctx (Z3.Boolean.mk_and ctx (List.map (fun (_, b, c) -> Z3.Boolean.mk_implies ctx b c) pot_cons_with_flags)))];
-    Z3.Solver.add solver [Z3.Boolean.mk_not ctx (Z3.Boolean.mk_and ctx (List.map (fun (_, b, c) -> Z3.Boolean.mk_implies ctx b c) pot_cons_with_flags))];
-    let rec aux cons_in_play cons_violated = 
-      let assumpts = List.concat (List.map (fun (_, clist) -> List.map (fun (_, b, _) -> Z3.Boolean.mk_not ctx b) clist) cons_violated) in
-      match Z3.Solver.check solver (round_f :: assumpts) with
-      | Z3.Solver.UNKNOWN -> failwith "Error in z3 solver"
-      | Z3.Solver.UNSATISFIABLE -> 
-        (*Z3.Solver.pop solver 1;*)
-        Z3.Solver.add solver (List.map (fun (_, _, c) -> c) cons_in_play);
-        Z3.Solver.add solver [Z3.Boolean.mk_not ctx round_f];
-        (List.map (fun (i, _, _) -> i) cons_in_play), (List.map (fun (m, clist) -> m, (List.map (fun (i, _, _) -> i) clist)) cons_violated)
-      | Z3.Solver.SATISFIABLE ->
-        (match Z3.Solver.get_model solver with
-        | None -> failwith "Error getting model"
-        | Some m ->
-          let partitioner (_, _, con) = 
-            let con_interp = match Z3.Model.eval m con true with | None -> failwith "Error getting interp" | Some e -> e in
-            Z3.Boolean.is_true con_interp
-          in
-          let cs_still_in_play, cs_violated = List.partition partitioner cons_in_play in
-          aux (List.rev cs_still_in_play) ((m, List.rev cs_violated) :: cons_violated)
-        )
-    in
-    aux pot_cons_with_flags []
-
-  
-  let get_z3_consts form = 
-    let rec aux phi seen_asts consts = 
-      if BatISet.mem (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts then seen_asts, consts
-      else
-        if Z3.Expr.is_const phi && (not (Z3.Boolean.is_true phi || Z3.Boolean.is_false phi)) then 
-          BatISet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts, BatISet.add ((Z3.Symbol.get_int % Z3.FuncDecl.get_name % Z3.Expr.get_func_decl) phi) consts
-        else
-          let children = Z3.Expr.get_args phi in
-          if children = [] then BatISet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts, consts
-          else
-            let new_seen_asts, new_consts = List.fold_left (fun (pasts, pconsts) child -> aux child pasts pconsts) (seen_asts, consts) children in
-            BatISet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) new_seen_asts, new_consts
-    in
-    snd (aux form (BatISet.empty) (BatISet.empty)) *)
-
-
-  (*let ppmodel c f model = 
-    let model_interps = 
-      List.fold_left (fun acc fun_decl -> 
-        if Z3.Sort.get_sort_kind (Z3.FuncDecl.get_range fun_decl) = Z3enums.BOOL_SORT then acc (* Not a general solution *)
-        else
-          let interp = match Z3.Model.get_const_interp model fun_decl with
-          | None -> failwith "Const has no interpretation in model"
-          | Some e-> 
-            Mon.of_zarith_q (Z3.Arithmetic.Real.get_ratio e)
-          in
-          (get_mon c (Z3.Symbol.get_int (Z3.FuncDecl.get_name fun_decl)), interp) :: acc) [] (Z3.Model.get_const_decls model) in
-    Format.pp_open_hvbox f 0;
-    Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) (fun fo (monic, interp) -> ppmm fo monic; Format.pp_print_string fo (" = " ^ (Mon.to_string_c interp))) f model_interps
-    *)
-    
-
-  (*let complete_and_evaluate_model m new_ineqs form c = 
-    let model_interps = 
-      List.fold_left (fun map fun_decl -> 
-        if Z3.Sort.get_sort_kind (Z3.FuncDecl.get_range fun_decl) = Z3enums.BOOL_SORT then map (* Not a general solution *)
-        else
-          let interp = match Z3.Model.get_const_interp m fun_decl with
-          | None -> failwith "Const has no interpretation in model"
-          | Some e-> 
-            C.of_zarith_q (Z3.Arithmetic.Real.get_ratio e)
-          in
-          BatIMap.add (Z3.Symbol.get_int (Z3.FuncDecl.get_name fun_decl)) interp map) (BatIMap.empty ~eq:(fun a b -> C.cmp a b = 0)) (Z3.Model.get_const_decls m) in
-    let folder interp_map new_ineq_id = 
-      match BatIMap.find new_ineq_id c.ineqs with
-      | (_, Product prod_list) ->
-        let prod_folder prod_map prod_id = 
-          let prod_coef_map, _ = BatIMap.find prod_id c.ineqs in
-          let mon_prod_folder modeldim curr_interp acc =
-            let mon_mon_folder dim _ inner_map = 
-              let mon1 = id_to_mon dim in
-              if is_one (from_mon_list [(C.one, mon1)]) then inner_map
-              else
-                let mon2 = id_to_mon modeldim in
-                let model_interp = 
-                  try C.mulc curr_interp (BatIMap.find dim model_interps)
-                  with Not_found ->
-                    failwith ("Don't have an interp for " ^ (to_string (from_mon_list [(C.one, mon1)]))) in
-                let (_, prod_mon) = mult_mon (C.one, mon1) (C.one, mon2) in
-                let prod_dim = mon_to_id prod_mon in
-                if BatIMap.mem prod_dim inner_map || BatIMap.mem prod_dim model_interps then inner_map
-                else BatIMap.add prod_dim model_interp inner_map
-            in
-            BatIMap.fold mon_mon_folder prod_coef_map acc
-          in
-          BatIMap.fold mon_prod_folder prod_map (BatIMap.empty ~eq:(fun a b -> C.cmp a b = 0))
+  let add_ineq c is_strict ine : (cone * int list) = 
+    Log.log_s ~level:`debug "Adding ineq: ";
+    Log.log ~level:`debug (pp ~ord:(Cl.get_ord c.closure)) (Some ine);
+    Log.log_line_s ~level:`debug "To cone: ";
+    Log.log ~level:`debug ppc (Some c);
+    let mult_and_minimize_ineqs ineqs available_id ins_to_add = 
+      let outer_folder _ ine (n_id, acc) = 
+        let inner_folder _ existing_ine (next_id, acc_p) = 
+          if existing_ine.d + ine.d <= c.depth then
+            (let new_ine, _ = Cl.reduce (mul (dim_to_poly existing_ine.dm) (dim_to_poly ine.dm)) c.closure in
+            let new_is_strict = ine.is_strict && existing_ine.is_strict in
+            match is_const new_ine with
+            | Some cons when C.cmp cons C.zero > 0 -> next_id, acc_p
+            | Some cons when C.cmp cons C.zero = 0 && (not new_is_strict) -> next_id, acc_p
+            | Some _ -> failwith "Trying to add negative constant to cone"
+            | None ->
+              let new_in = {dm = poly_to_dim new_ine; d = existing_ine.d + ine.d; prod = List.sort (Int.compare) (existing_ine.prod @ ine.prod); is_strict = new_is_strict} in
+              next_id + 1, IM.add next_id new_in acc_p
+            )
+          else next_id, acc_p
         in
-        let ineq_interps = List.fold_left prod_folder (fst (BatIMap.find (List.hd prod_list) c.ineqs)) (List.tl prod_list) in
-        BatIMap.union (fun a _ -> a) interp_map ineq_interps
-      | _ -> failwith "only know how to complete products"
+        IM.fold inner_folder ineqs (n_id, acc)
+      in
+      let next_id, new_prods = IM.fold outer_folder ins_to_add (available_id, IM.empty) in
+      let unioner _ _ _ = failwith "Merging maps with duplicate ids" in
+      next_id, IM.union unioner ineqs (IM.union unioner ins_to_add new_prods) 
     in
-    let new_mon_interps = List.fold_left folder (BatIMap.empty ~eq:(fun a b -> C.cmp a b = 0)) new_ineqs in
-    let partial_eval = match Z3.Model.eval m form false with | None -> failwith "Error evaluating model" | Some e -> e in
-    let rem_consts = get_z3_consts partial_eval in
-    let get_interps dim = 
-      try 
-        Z3.Arithmetic.Real.mk_const c.z3ctx (Z3.Symbol.mk_int c.z3ctx dim), Z3.Arithmetic.Real.mk_numeral_s c.z3ctx (C.to_string_c (BatIMap.find dim new_mon_interps))
-      with Not_found -> Z3.Arithmetic.Real.mk_const c.z3ctx (Z3.Symbol.mk_int c.z3ctx dim), Z3.Arithmetic.Real.mk_numeral_i c.z3ctx 0
-    in
-    let vars, interps = List.split (List.map get_interps (BatISet.elements rem_consts)) in
-    Z3.Expr.simplify (Z3.Expr.substitute partial_eval vars interps) None
-
-  (*
-  let project_vars ctx form variables = 
-    let bound_vars = List.mapi (fun i _ -> Z3.Quantifier.mk_bound ctx i (Z3.Arithmetic.Real.mk_sort ctx)) variables in
-    let subst_form = Z3.Expr.substitute form (List.map (Z3.Arithmetic.Real.mk_const ctx) variables) bound_vars in
-    let quant = Z3.Quantifier.mk_exists ctx (List.map (fun _ -> Z3.Arithmetic.Real.mk_sort ctx) bound_vars) variables subst_form None [] [] None None in
-    Z3.Expr.simplify (Z3.Quantifier.expr_of_quantifier quant) None*)*)
-
-
+    let poly_id = c.curr_poly in
+      let rec make_depth_prod (prev_ineq, prev_dep, prev_prod, id) acc = 
+        let curr_depth = prev_dep + 1 in
+         if curr_depth <= c.depth then 
+          let curr_ineq, _ = Cl.reduce (mul prev_ineq ine) c.closure in
+          match is_const curr_ineq with
+          | Some cons when C.cmp cons C.zero > 0 -> make_depth_prod (curr_ineq, curr_depth, poly_id :: prev_prod, id) acc
+          | Some cons when C.cmp cons C.zero = 0 && (not is_strict) -> make_depth_prod (curr_ineq, curr_depth, poly_id :: prev_prod, id) acc
+          | Some _ -> failwith "Trying to add negative constant to cone"
+          | None ->
+            let ine = {dm = poly_to_dim curr_ineq; d = curr_depth; prod = poly_id :: prev_prod; is_strict} in
+            make_depth_prod (curr_ineq, curr_depth, poly_id :: prev_prod, id + 1) (IM.add id ine acc)
+        else
+          id, acc
+      in
+      let next_free_id, self_prod = make_depth_prod (from_const C.one, 0, [], poly_id) IM.empty in
+      let next_available_id, ineqs = mult_and_minimize_ineqs c.ineqs next_free_id self_prod in
+      let new_c = {c with curr_poly = next_available_id; ineqs} in
+      Log.log_line_s ~level:`debug "Resulting cone: ";
+      Log.log ~level:`debug ppc (Some new_c);
+      new_c, List.init (next_available_id - poly_id) (fun i -> poly_id + i)
 
 
   module P = Polyhedron.Make(C)(struct
@@ -354,6 +242,12 @@ module Make(P : Poly.Polynomial) = struct
 
     let of_int x = id_to_mon x
 
+    let pp f v = 
+      Format.pp_open_hbox f ();
+      (try ppmm f v
+      with Failure _ -> Format.pp_close_box f (); Format.pp_print_string f ("v." ^ (to_string v)));
+      Format.pp_close_box f ()
+
     module S = MS
 
     module M = MM
@@ -361,6 +255,7 @@ module Make(P : Poly.Polynomial) = struct
   end
   )
 
+  open Sigs.Form
 
   let const_dim = snd (make_mon_from_coef (C.zero))
 
@@ -370,64 +265,78 @@ module Make(P : Poly.Polynomial) = struct
       (MM.remove const_dim coef_map, const)
     with Not_found -> coef_map, C.zero
 
-  let saturate comp_hull (c : cone) (impls : impl list) =
-    let reduce_impls con is = 
-      List.map (
-        fun (h, cons) -> extract_const (poly_to_dim (fst (Cl.reduce h con.closure))), extract_const (poly_to_dim (fst (Cl.reduce cons con.closure)))) is in
+  let saturate (c : cone) (form : poly form) =
+    let atoms = Sigs.Form.get_atoms form in
+    let reduce_atoms con atos : P.lterm form list  = List.map (map (fun e -> extract_const (poly_to_dim (fst (Cl.reduce e con.closure))))) atos in
+    let reduce_form con f : P.lterm form = map (fun e -> extract_const (poly_to_dim (fst (Cl.reduce e con.closure)))) f in
 
-    let impl_to_z3 con reduced_impls = 
-      let mapper (h, cons) = 
-        Z3.Boolean.mk_implies con.z3ctx (P.cntsr_to_z3 `ge con.z3ctx h) (P.cntsr_to_z3 `ge con.z3ctx cons)
-      in
-      Z3.Boolean.mk_and con.z3ctx (List.map mapper reduced_impls)
+    let rec form_to_z3 con f = 
+      match f with
+      | Ge e -> P.cntsr_to_z3 `ge con.z3ctx e
+      | Gt e -> P.cntsr_to_z3 `gt con.z3ctx e
+      | Eq e -> P.cntsr_to_z3 `eq con.z3ctx e
+      | Or list -> Z3.Boolean.mk_or con.z3ctx (List.map (form_to_z3 con) list)
+      | And list -> Z3.Boolean.mk_and con.z3ctx (List.map (form_to_z3 con) list)
     in
     let eqs_extract = List.map (extract_const % poly_to_dim) (Cl.get_generators c.closure) in
-    let ids_ineqs_extract = List.map (fun (id, (i, _)) -> id, extract_const i) (BatList.of_enum (IM.enum c.ineqs)) in
-    let z3_cnstrs = (List.map (P.cntsr_to_z3 `eq c.z3ctx) eqs_extract) @ (List.map ((P.cntsr_to_z3 `ge c.z3ctx) % snd) (ids_ineqs_extract)) in
+    let non_strict_with_ids, strict_with_ids = 
+      IM.fold (fun id i (ns, str) -> if i.is_strict then ns, (id, extract_const i.dm) :: str
+                                     else (id, extract_const i.dm) :: ns, str) c.ineqs ([], []) in
+    let z3_cnstrs = (List.map (P.cntsr_to_z3 `eq c.z3ctx) eqs_extract) @ 
+                    (List.map (P.cntsr_to_z3 `ge c.z3ctx % snd) non_strict_with_ids) @
+                    (List.map (P.cntsr_to_z3 `gt c.z3ctx % snd) strict_with_ids)
+                     in
     let solver = Z3.Solver.mk_simple_solver c.z3ctx in
     Z3.Solver.add solver z3_cnstrs;
-    let reduced_impls = reduce_impls c impls in
-    let init_form = impl_to_z3 c reduced_impls in
-    let (ineqs_to_upgrade, new_ineqs, new_strict) = 
-      if comp_hull then P.saturate c.z3ctx solver eqs_extract (List.map snd ids_ineqs_extract) [] init_form 
-      else P.saturate_c c.z3ctx solver eqs_extract (List.map snd ids_ineqs_extract) [] init_form  (List.map snd reduced_impls)
+    let reduced_atoms = reduce_atoms c atoms in
+    let init_form = form_to_z3 c (reduce_form c form) in
+    let (ineqs_to_upgrade, new_eqs, new_ineqs, new_strict) = 
+      P.saturate_c c.z3ctx solver eqs_extract (List.map snd non_strict_with_ids) (List.map snd strict_with_ids) init_form reduced_atoms
       in
-    Log.log_line_s ~level:`trace ("Found " ^ (string_of_int (List.length (new_ineqs @ new_strict))) ^ " new consequences");
-    Log.log_line_s ~level:`trace ("Found " ^ (string_of_int (List.length ineqs_to_upgrade)) ^ " new equations");
-    let rec fixpoint ine_with_ids is_to_up non_strict_to_add (*strict_to_add*) co = 
-      Log.log_line_s ~level:`trace "Curr cone";
-      Log.log ppc ~level:`trace (Some co);
-      if is_to_up = [] && non_strict_to_add = [] (*&& strict_to_add = []*) then co
+    Log.log_line_s ~level:`debug ("Found " ^ (string_of_int (List.length (new_eqs @ new_ineqs @ new_strict))) ^ " new consequences");
+    Log.log_line_s ~level:`debug ("Found " ^ (string_of_int (List.length ineqs_to_upgrade)) ^ " new equations");
+    let rec fixpoint ine_with_ids is_to_up eqs_to_add non_strict_to_add strict_to_add co = 
+      if is_to_up = [] && eqs_to_add = [] && non_strict_to_add = [] && strict_to_add = [] then co
       else
         let ids_to_upgrade = List.map (fun index -> fst (List.nth ine_with_ids index)) is_to_up in
-        let upgraded_cone, modified_ineqs = upgrade_ineqs co ids_to_upgrade in
-        let added_ineq_cone, added = 
-          List.fold_left (
-            fun (con, unadded_ineqs) (ineq_to_add_m, ineq_to_add_c) -> 
-              let dim_map = 
-                if C.cmp ineq_to_add_c C.zero = 0 then ineq_to_add_m
-                else MM.add const_dim ineq_to_add_c ineq_to_add_m in
-              let ineq_poly = dim_to_poly dim_map in
-              let new_c, added = add_ineq con ineq_poly Given in 
-              let (_, non_lin) = match added with | [] -> failwith "Added no ineqs?" | x :: xs -> x, xs in
-              (new_c, non_lin @ unadded_ineqs)
-              ) (upgraded_cone, []) (non_strict_to_add) in
-        let z3_cnstrs = List.map ((P.cntsr_to_z3 `ge added_ineq_cone.z3ctx) % extract_const) (List.map (fun id -> fst (IM.find id added_ineq_cone.ineqs)) (added @ modified_ineqs)) in
-        Z3.Solver.add solver z3_cnstrs;
+        let lterm_to_poly (map, const) = 
+          dim_to_poly 
+            (if C.cmp const C.zero = 0 then map
+            else MM.add const_dim const map)
+        in
+        let upgraded_cone, modified_ineqs = upgrade_ineqs co ids_to_upgrade (List.map lterm_to_poly eqs_to_add) in
+
+        let add_ineq_to_cone is_strict (con, unadded_ineqs) lterm =
+          let ineq_poly = lterm_to_poly lterm in
+          let new_c, added = add_ineq con is_strict ineq_poly in 
+          let (_, non_lin) = match added with | [] -> 0, [] | x :: xs -> x, xs in
+          (new_c, non_lin @ unadded_ineqs)
+        in
+        let added_ineq_cone, added = List.fold_left (add_ineq_to_cone true) (List.fold_left (add_ineq_to_cone false) (upgraded_cone, []) non_strict_to_add) strict_to_add in
+        let to_z3_cnstr id = 
+          let ineq = IM.find id added_ineq_cone.ineqs in
+          if ineq.is_strict then P.cntsr_to_z3 `gt added_ineq_cone.z3ctx (extract_const ineq.dm)
+          else P.cntsr_to_z3 `ge added_ineq_cone.z3ctx (extract_const ineq.dm)
+        in
+        let new_z3_cnstrs = List.map to_z3_cnstr (added @ modified_ineqs) in
+        Z3.Solver.add solver new_z3_cnstrs;
         let curr_generators = List.map (extract_const % poly_to_dim) (Cl.get_generators added_ineq_cone.closure) in
-        let curr_ineqs_and_ids = List.map (fun (id, (i, _)) -> id, extract_const i) (BatList.of_enum (IM.enum added_ineq_cone.ineqs)) in
+        let curr_non_strict_with_ids, curr_strict_with_ids = 
+          IM.fold (fun id i (ns, str) -> if i.is_strict then ns, (id, extract_const i.dm) :: str
+                                         else (id, extract_const i.dm) :: ns, str) added_ineq_cone.ineqs ([], []) in
         Z3.Solver.add solver (List.map (P.cntsr_to_z3 `eq added_ineq_cone.z3ctx) curr_generators);
-        let new_red_impls = reduce_impls added_ineq_cone impls in (* TODO: remove discovered things from impl *)
-        let next_form = impl_to_z3 added_ineq_cone new_red_impls in
-        let (next_is_to_up, next_new_ineqs, next_new_strict) = 
-          if comp_hull then P.saturate added_ineq_cone.z3ctx solver curr_generators (List.map snd curr_ineqs_and_ids) [] next_form 
-          else P.saturate_c added_ineq_cone.z3ctx solver curr_generators (List.map snd curr_ineqs_and_ids) [] next_form  (List.map snd new_red_impls)
+        let new_red_atoms = reduce_atoms added_ineq_cone atoms in
+        let next_form = form_to_z3 added_ineq_cone (reduce_form added_ineq_cone form) in
+        Log.log_line_s ~level:`debug "Curr cone";
+        Log.log ppc ~level:`debug (Some added_ineq_cone);
+        let (next_is_to_up, next_new_eqs, next_new_ineqs, next_new_strict) = 
+          P.saturate_c added_ineq_cone.z3ctx solver curr_generators (List.map snd curr_non_strict_with_ids) (List.map snd curr_strict_with_ids) next_form new_red_atoms
           in
         Log.log_line_s ~level:`debug ("Found " ^ (string_of_int (List.length next_new_ineqs)) ^ " new consequences");
         Log.log_line_s ~level:`debug ("Found " ^ (string_of_int (List.length next_is_to_up)) ^ " new equations");
-        fixpoint curr_ineqs_and_ids next_is_to_up (next_new_ineqs @ next_new_strict) added_ineq_cone
+        fixpoint curr_non_strict_with_ids next_is_to_up next_new_eqs next_new_ineqs next_new_strict added_ineq_cone
     in
-    fixpoint ids_ineqs_extract ineqs_to_upgrade (new_ineqs @ new_strict) c
+    fixpoint non_strict_with_ids ineqs_to_upgrade new_eqs new_ineqs new_strict c
 
 
   (*let saturate (c : cone) (impls : impl list) =
@@ -650,7 +559,7 @@ module Make(P : Poly.Polynomial) = struct
 
   let pp_stats f c = 
     let num_eqs = Cl.get_num_eqs c.closure in
-    let ineqs = BatList.of_enum (BatEnum.map fst (IM.values c.ineqs)) in
+    let ineqs = BatList.of_enum (BatEnum.map (fun a -> a.dm) (IM.values c.ineqs)) in
     let num_ineqs = List.length ineqs in
     let mons = List.fold_left (fun acc ine -> MS.union acc (MM.domain ine)) MS.empty ineqs in
     let num_mons = MS.cardinal mons in
@@ -665,10 +574,10 @@ module Make(P : Poly.Polynomial) = struct
     let bigD = id_to_mon (fresh_dim ()) in
     let ineqs = c.ineqs in
     let p_ired_m = extract_const (poly_to_dim p) in
-    let all_dims = IM.fold (fun _ (poly, _) dim_set -> MS.union (MM.domain poly) dim_set) ineqs MS.empty in
+    let all_dims = IM.fold (fun _ ine dim_set -> MS.union (MM.domain ine.dm) dim_set) ineqs MS.empty in
     let sorted_dims = List.rev (List.sort (fun i j -> Cl.get_ord c.closure i j) (MS.to_list all_dims)) in
     let solver = Z3.Solver.mk_simple_solver c.z3ctx in
-    let ineqs_ex = IM.fold (fun _ (pol, _) ineqs -> extract_const pol :: ineqs) ineqs [] in
+    let ineqs_ex = IM.fold (fun _ ine ineqs -> extract_const ine.dm :: ineqs) ineqs [] in
     let z3_ineqs = List.map (P.cntsr_to_z3 `ge c.z3ctx) ineqs_ex in
     let polyhedron = List.fold_left (P.add_cnstr `ge) P.top_p ineqs_ex in
     Z3.Solver.add solver z3_ineqs;
@@ -684,7 +593,27 @@ module Make(P : Poly.Polynomial) = struct
     (*let eq_just = {orig = p_ired; mults} in*)
     Log.log ~level:`debug pp_red (Some (p_ired, neg_comb, p_ineq_red, c));*)
     Log.log ~level:`debug pp_stats (Some c);
-    i_reduce_ineq use_proj p_ired c
+    let pp_ups f ups = 
+      let pp_up fo up = 
+        pp ~ord:(Cl.get_ord c.closure) fo p; Format.pp_print_string fo " <= "; pp ~ord:(Cl.get_ord c.closure) fo up
+      in
+      Format.pp_open_vbox f 0;
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) pp_up f ups;
+      Format.pp_close_box f ()
+    in
+    let pp_lows f lows = 
+      let pp_low fo low = 
+        pp ~ord:(Cl.get_ord c.closure) fo p; Format.pp_print_string fo " >= "; pp ~ord:(Cl.get_ord c.closure) fo low
+      in
+      Format.pp_open_vbox f 0;
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) pp_low f lows;
+      Format.pp_close_box f ()
+    in
+    let ups, lows = i_reduce_ineq use_proj p_ired c in
+    Log.log_line_s ~level:`trace "Reduced polys: ";
+    Log.log ~level:`trace pp_ups (Some ups);
+    Log.log ~level:`trace pp_lows (Some lows);
+    ups, lows
 
     (*p_ineq_red*)
     
@@ -702,20 +631,36 @@ module Make(P : Poly.Polynomial) = struct
     (*normalize unnormal_c*)
     unnormal_c*)
 
-  let make_cone_cl ?(sat = 1) ?(ineqs = []) ?(impls = []) ?(hull = false) cl = 
+  let impl_to_form (h, tl) = 
+    Sigs.Form.Or [Sigs.Form.Gt (negate h); Sigs.Form.Ge tl]
+
+  let make_cone_cl ?(sat = 1) ?(ineqs = []) ?(impls = [])  cl = 
     let ineqs = ineqs @ (Cl.instantiate_ineqs cl) in
     let impls = impls @ (Cl.instantiate_impls cl) in
-    let red_add_ine co ine = 
-      let ine_red, _ = Cl.reduce ine co.closure in
-      fst (add_ineq co ine_red (Given))
-    in
+    let red_add_ine co ine = fst (add_ineq co false ine) in
     let prod_sat_cone = 
       List.fold_left red_add_ine (make_empty_cone sat cl) ineqs in
-    let unnormal_c = saturate hull prod_sat_cone impls in
+    let unnormal_c = saturate prod_sat_cone (Sigs.Form.And (List.map impl_to_form impls)) in
     (*Log.log_time_cum "normalize" normalize unnormal_c*)
     unnormal_c
   
+  let make_cone_cl_form ?(sat = 1) ?(ineqs = []) form cl =
+    let ineqs = ineqs @ (Cl.instantiate_ineqs cl) in
+    let impls = Cl.instantiate_impls cl in
+    let red_add_ine co ine = fst (add_ineq co false ine) in
+    let prod_sat_cone = 
+      List.fold_left red_add_ine (make_empty_cone sat cl) ineqs in
+    let unnormal_c = saturate prod_sat_cone (Sigs.Form.And (form :: (List.map impl_to_form impls))) in
+    (*Log.log_time_cum "normalize" normalize unnormal_c*)
+    unnormal_c
+    
 
   let unpurify p con = Cl.unpurify p con.closure
 
+
+  let set_effective_degree c vars_to_keep = 
+    let cl = Cl.set_effective_degree c.closure vars_to_keep in
+    fst (reduce_ineqs {c with closure = cl})
+
+  
 end

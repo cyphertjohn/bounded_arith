@@ -39,12 +39,11 @@ let vars_to_keep = ["v"; "a"; "e"; "b"]
 
 let () = SymBoundBenchmark.process_cmdline ()
 let sat_bound = SymBoundBenchmark.sat_bound ()
-let compute_hull = SymBoundBenchmark.compute_hull ()
 let use_proj = not (SymBoundBenchmark.use_lp ())
 
 let () = Bound.Log.log_times := true
 
-let ts = Bound.Log.log_time "Rewrite total" (Bound.Rewriter.rewrite ~use_proj:use_proj ~sat:sat_bound ~compute_hull:compute_hull [t1;t2;t3;t4;t5] 
+let ts = Bound.Log.log_time "Rewrite total" (Bound.Rewriter.rewrite ~use_proj:use_proj ~sat:sat_bound [t1;t2;t3;t4;t5] 
 						  [
 							from_string "v";
 						  	from_string "e";

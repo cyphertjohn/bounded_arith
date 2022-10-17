@@ -7,3 +7,10 @@
   (modules mytoplevel)
   (modes byte)
 )
+
+(executable
+  (name rba)
+  (libraries bound)
+  (promote (until-clean) (into ..))
+  (modules rba)
+)

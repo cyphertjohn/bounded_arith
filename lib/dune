@@ -6,7 +6,7 @@
  (libraries 
     gmp
     camlidl
-    apron apron.boxMPQ apron.octMPQ apron.polkaMPQ
+    ;apron apron.boxMPQ apron.octMPQ apron.polkaMPQ
     zarith batteries faugere faugere.zarith z3)
  )
 

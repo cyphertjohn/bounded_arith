@@ -278,7 +278,10 @@ module Make ( Co : Sigs.Coefficient) ( Va : Sigs.Var) = struct
   let get_vars (p : poly) = 
     match p.vars with
     | Some vset -> vset
-    | None -> List.fold_left (fun acc (_, m) -> V.S.union (M.get_vars m) acc) V.S.empty (get_mons p)
+    | None -> 
+      let vset = List.fold_left (fun acc (_, m) -> V.S.union (M.get_vars m) acc) V.S.empty (get_mons p) in
+      p.vars <- Some vset;
+      vset
   
   (*let collect_terms (mons : poly) : poly = 
     let collected_terms = BatEnum.group_by (fun x y -> !M.ord (snd x) (snd y) = 0) mons in
@@ -522,6 +525,8 @@ module Make ( Co : Sigs.Coefficient) ( Va : Sigs.Var) = struct
 
   let get_poly = fst
 
+  let copy_sorted_poly (poly, mon_l) = ({mons = BatHashtbl.copy poly.mons; vars = poly.vars}, mon_l)
+
   let division ord divisors f =
     let find_map func lis = 
       let rec foo l i =
@@ -552,7 +557,8 @@ module Make ( Co : Sigs.Coefficient) ( Va : Sigs.Var) = struct
           List.iteri (fun j x -> if j = i then add_mon x new_mon) mults;
           aux (make_sorted_poly ord (fst p)) mults r
     in
-    (!reduction_occurred, aux f (List.map (fun _ -> (make_poly_from_mon M.zero)) divisors) ((make_poly_from_mon M.zero), []))
+    let f_copy = copy_sorted_poly f in
+    (!reduction_occurred, aux f_copy (List.map (fun _ -> (make_poly_from_mon M.zero)) divisors) ((make_poly_from_mon M.zero), []))
 
   let make_monic ((p, ml) : sorted_poly) : sorted_poly = 
     let lc = lc (p, ml) in

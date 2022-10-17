@@ -11,27 +11,29 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
 
 
   let pp_l f lt = 
-    if DM.is_empty (fst lt) then (Format.pp_open_hbox f (); Format.pp_print_string f (C.to_string_c (snd lt)); Format.pp_close_box f ())
+    Format.pp_open_hbox f ();
+    if DM.is_empty (fst lt) then Format.pp_print_string f (C.to_string_c (snd lt))
     else 
-      let tlist = DM.fold 
+      (let tlist = DM.fold 
         (fun dim coef l -> 
-          if C.cmp coef C.zero < 0 then (C.to_string_c (C.mulc coef (C.from_string_c "-1")) ^ ".v" ^ (V.to_string dim), true) :: l
-          else (C.to_string_c coef ^ ".v" ^ (V.to_string dim), false) :: l) (fst lt) [] in
-      let tlist = 
-        if C.cmp (snd lt) C.zero < 0 then List.rev ((C.to_string_c (C.mulc (C.from_string_c "-1") (snd lt)), true) :: tlist)
-        else if C.cmp (snd lt) C.zero = 0 then List.rev tlist
-        else List.rev ((C.to_string_c (snd lt), false) :: tlist)
+          if C.cmp coef C.zero < 0 then (C.mulc coef (C.from_string_c "-1"), dim, true) :: l
+          else (coef, dim, false) :: l) (fst lt) [] in
+      let tlist = List.rev tlist in
+      let pp_term fo (coef, v, is_neg) = 
+        if is_neg then Format.pp_print_string fo (" -")
+        else Format.pp_print_string fo (" +");
+        Format.pp_print_space fo ();
+        if C.cmp coef C.one <> 0 then Format.pp_print_string fo (C.to_string_c coef); 
+        V.pp fo v
       in
-      let ft, is_ft_neg = List.hd tlist in
-      Format.pp_open_hbox f ();
-      if is_ft_neg then Format.pp_print_string f ("-" ^ ft)
-      else Format.pp_print_string f ft;
-      let print_t (t, is_neg) = 
-        if is_neg then (Format.pp_print_string f " -"; Format.pp_print_space f ())
-        else (Format.pp_print_string f " +"; Format.pp_print_space f ());
-        Format.pp_print_string f t
-      in
-      List.iter print_t (List.tl tlist); Format.pp_close_box f ()
+      let fc, fv, is_ft_neg = List.hd tlist in
+      if is_ft_neg then Format.pp_print_string f ("-");
+      if C.cmp fc C.one <> 0 then Format.pp_print_string f (C.to_string_c fc);
+      V.pp f fv;
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) pp_term f (List.tl tlist);
+      if C.cmp (snd lt) C.zero < 0 then Format.pp_print_string f (" - " ^ (C.to_string_c (C.mulc (C.from_string_c "-1") (snd lt))))
+      else if C.cmp (snd lt) C.zero > 0 then Format.pp_print_string f (" + " ^ C.to_string_c (snd lt)));
+    Format.pp_close_box f ()
 
   let lt_add a b = 
     let merger _ a_opt b_opt = 
@@ -91,6 +93,19 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
     in
     DM.fold folder map (empty_m, const)
 
+  let lt_normalize kind (map, const) = 
+    if DM.is_empty map then (map, const)
+    else 
+      let first_coef = snd (DM.min_binding map) in
+      if C.cmp first_coef C.zero = 0 then failwith "Coef map has a 0"
+      else if C.cmp first_coef C.one = 0 then (map, const)
+      else
+        match kind with
+        | `eq -> lt_scalar_mult (C.divc C.one first_coef) (map, const)
+        | `ge | `gt -> 
+          if C.cmp first_coef C.zero > 0 then lt_scalar_mult (C.divc C.one first_coef) (map, const)
+          else lt_scalar_mult (C.divc (C.from_string_c "-1") first_coef) (map, const)
+
   module S = BatSet.Make(struct type t = lterm let compare = lt_cmp end)
 
   (*type ne_poly = {eqs: lterm list; non_strict: lterm list; strict: lterm list}*)
@@ -108,28 +123,29 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
       let dims = S.fold (fun (cmap, _) -> V.S.union (DM.domain cmap)) all_cnstrs V.S.empty in
       (S.cardinal all_cnstrs, List.length (V.S.to_list dims))
 
+  let pp_ineq knd f dm = 
+    Format.pp_open_box f 0;
+    pp_l f dm;
+    match knd with
+    | `eq -> Format.pp_print_string f " = 0"
+    | `ge -> Format.pp_print_string f " >= 0"
+    | `gt -> Format.pp_print_string f " > 0";
+    Format.pp_close_box f ()
+
   let pp f p = 
-    match p with
+    Format.pp_open_vbox f 4;
+    (match p with
     | Bot -> Format.pp_print_string f "Bot"
     | Ne cnstrs ->
-      let pp_print_eq fo eq = 
-        Format.pp_open_hbox fo (); pp_l fo eq; Format.pp_print_string fo " = 0"; Format.pp_close_box fo ()
-      in
-      let pp_print_ge fo ge = 
-        Format.pp_open_hbox fo (); pp_l fo ge; Format.pp_print_string fo " >= 0"; Format.pp_close_box fo ()
-      in
-      let pp_print_gt fo gt = 
-        Format.pp_open_hbox fo (); pp_l fo gt; Format.pp_print_string fo " > 0"; Format.pp_close_box fo ()
-      in
-      Format.pp_open_vbox f 0;
-      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) pp_print_eq f (S.to_list cnstrs.eqs);
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp_ineq `eq) f (S.to_list cnstrs.eqs);
       Format.pp_print_space f ();
-      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) pp_print_ge f (S.to_list cnstrs.non_strict);
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp_ineq `ge) f (S.to_list cnstrs.non_strict);
       Format.pp_print_space f ();
-      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_space fo ()) pp_print_gt f (S.to_list cnstrs.strict);
-      Format.pp_close_box f ()
+      Format.pp_print_list ~pp_sep:(fun fo () -> Format.pp_print_string fo ";"; Format.pp_print_space fo ()) (pp_ineq `gt) f (S.to_list cnstrs.strict));
+    Format.pp_close_box f ()
 
   let add_cnstr kind poly (c_map, const) = 
+    let (c_map, const) = lt_normalize kind (c_map, const) in
     match poly with
     | Bot -> Bot
     | Ne p ->
@@ -169,7 +185,7 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
       (*let folder kind res p_term = add_cnstr kind res (lt_replace v replace p_term) in
       List.fold_left (folder `eq) (List.fold_left (folder `ge) (List.fold_left (folder `gt) top_p p.strict) p.non_strict) p.eqs*)
 
-  module A = struct
+  (*module A = struct
 
     open Apron.Lincons1
 
@@ -243,7 +259,7 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
       Log.log ~level:`trace (Apron.Abstract0.print (fun i -> "v." ^ (string_of_int i))) (Some b);*)
       Apron.Abstract1.join man a b
 
-  end
+  end*)
 
 
   (*let vpl_poly_to_poly p =
@@ -352,7 +368,7 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
       let folder cnstr set = V.S.union (DM.domain (fst cnstr)) set in
       S.fold folder poly.eqs (S.fold folder poly.non_strict (S.fold folder poly.strict V.S.empty)) *)
 
-  let z3_atom_to_polyhedron negate phi = 
+(*  let z3_atom_to_polyhedron negate phi = 
     let rec z3_term_to_lterm t = 
       if Z3.Expr.is_const t then
         let name = Z3.FuncDecl.get_name (Z3.Expr.get_func_decl t) in
@@ -398,7 +414,7 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
       if Z3.Arithmetic.is_le phi || (negate && Z3.Arithmetic.is_gt phi) then add_cnstr `ge top_p rhs_minus_lhs
       else if Z3.Arithmetic.is_lt phi || (negate && Z3.Arithmetic.is_ge phi) then add_cnstr `gt top_p rhs_minus_lhs
       else failwith "All cases should have been covered"
-
+*)
 
 
   type vt = | MinusInf | Term of (C.coef DM.map * C.coef) | TermEp of (C.coef DM.map * C.coef)
@@ -553,7 +569,7 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
         let strict_cnstrs = List.map (fun (map, const) -> Vpl.Cstr.Rat.lt (imap_to_cstr_v map) (C.to_zarith const)) strict in
         assume (of_cond (Cond.of_cstrs (eq_cnstrs @ non_strict_cnstrs @ strict_cnstrs))) top*)
   
-
+(*
   let generalize_model model form = 
     let models_sats neg formula = 
       let t_interp = 
@@ -595,10 +611,10 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
     match get_implicant false form with
     | Bot -> failwith "Unable to find implicant"
     | Ne i -> Ne i
-
+*)
         
       
-  let get_z3_consts form = 
+(*  let get_z3_consts form = 
     let rec aux phi seen_asts consts = 
       if BatSet.mem (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) seen_asts then seen_asts, consts
       else
@@ -616,8 +632,9 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
             BatSet.add (Z3.AST.get_id (Z3.Expr.ast_of_expr phi)) new_seen_asts, new_consts
     in
     snd (aux form (BatSet.empty) (V.S.empty))
+*)
 
-  let convex_hull ctx solver =
+  (*let convex_hull ctx solver =
     let form = Z3.Boolean.mk_and ctx (Z3.Solver.get_assertions solver) in
     let form_vars = get_z3_consts form in
     (*let hull_set = List.fold_left (fun s d -> BatSet.remove d s) (get_z3_consts form) project_dims in
@@ -644,7 +661,7 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
         let implicant = generalize_model model form in
         let apron = A.of_poly env implicant in
         let next = A.join polyhedron apron in
-
+*)
         (*(let m_proj = 
         List.fold_left (fun map fun_decl -> 
           if Z3.Sort.get_sort_kind (Z3.FuncDecl.get_range fun_decl) = Z3enums.BOOL_SORT then map (* Not a general solution *)
@@ -706,11 +723,11 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
         | Z3.Solver.UNSATISFIABLE -> 
           Log.log_line_s ~level:`trace "Projected poly isn't SAT!");
         (* check model |= next, model |= gen_poly, gen_poly |= next, polyhedron |= next, model |= not polyhedron*) *)
-
+(*
         Log.log_line_s ~level:`trace "Join Complete";
         alpha_below next))
     in
-    alpha_below (A.bottom env)
+    alpha_below (A.bottom env)*)
 
 
   let find_cons ?(use_flags=true) ctx solver pot_cons (*biggest_flag_num*) = 
@@ -748,7 +765,7 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
 
 
 
-  let discover_eqs ctx solver poly pot_eqs = 
+  (*let discover_eqs ctx solver poly pot_eqs = 
     let (eqs, _) = find_cons ctx solver (List.map (cntsr_to_z3 `eq ctx) pot_eqs) in
     let new_eqs, still_ineqs, _ = 
        List.fold_left (
@@ -756,12 +773,12 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
           if List.mem ind eqs then (cnstr :: es, is, ind + 1) 
           else (es, cnstr :: is, ind + 1)) ([], [], 0) pot_eqs in
     let poly_plus_eqs = List.fold_left (add_cnstr `eq) poly new_eqs in
-    match poly_plus_eqs with | Bot -> Bot, eqs | Ne x -> Ne {x with non_strict = S.of_list still_ineqs}, eqs
+    match poly_plus_eqs with | Bot -> Bot, eqs | Ne x -> Ne {x with non_strict = S.of_list still_ineqs}, eqs*)
 
   let find_new_constraints poly new_p = 
     match poly, new_p with
-    | Bot, Bot -> [], [], []
-    | Bot, Ne new_pp -> S.to_list new_pp.eqs, S.to_list new_pp.non_strict, S.to_list new_pp.strict
+    | Bot, Bot -> S.empty, S.empty, S.empty
+    | Bot, Ne new_pp -> new_pp.eqs, new_pp.non_strict, new_pp.strict
     | Ne _, Bot -> failwith "Could add inconsistent constraint"
     | Ne pp, Ne new_pp ->
       (*let folder mem_list found lt = 
@@ -769,11 +786,11 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
         else lt :: found
       in
       List.fold_left (folder pp.eqs) [] new_pp.eqs, List.fold_left (folder pp.non_strict) [] new_pp.non_strict, List.fold_left (folder pp.strict) [] new_pp.strict*)
-      S.to_list (S.diff new_pp.eqs pp.eqs), S.to_list (S.diff new_pp.non_strict pp.non_strict), S.to_list (S.diff new_pp.strict pp.strict)
+      S.diff new_pp.eqs pp.eqs, S.diff new_pp.non_strict pp.non_strict, S.diff new_pp.strict pp.strict
 
 
 
-  let saturate ctx solver eqs non_strict strict form =
+  (*let saturate ctx solver eqs non_strict strict form =
     (*Log.log_line_s ~level:`trace "Saturate w.r.t formula:";
     Log.log_line_s ~level:`trace (Z3.Expr.to_string form);
     Log.log_line_s ~level:`trace "";
@@ -801,46 +818,82 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
     let z3_new_ineqs = List.map (cntsr_to_z3 `ge ctx) new_ineqs in
     let z3_new_strict = List.map (cntsr_to_z3 `gt ctx) new_strict in (* not sure about this *)
     Z3.Solver.add solver (z3_new_eqs @ z3_new_ineqs @ z3_new_strict);
-    non_strict_to_upgrade, new_ineqs, new_strict
+    non_strict_to_upgrade, new_ineqs, new_strict*)
 
 
-  let discover_eqs_ineqs ctx solver poly pot_eqs pot_ineqs = 
-    let pot_cons = List.map (cntsr_to_z3 `eq ctx) pot_eqs @ List.map (cntsr_to_z3 `ge ctx) pot_ineqs in
+  let discover_eqs_ineqs ctx solver pot_is_to_up pot_eqs pot_ineqs pot_strict = 
+    let pot_cons = List.map (cntsr_to_z3 `eq ctx) (pot_is_to_up @ pot_eqs) @ List.map (cntsr_to_z3 `ge ctx) pot_ineqs @ List.map (cntsr_to_z3 `gt ctx) pot_strict in
     let (cons, _) = find_cons ctx solver pot_cons in
     let new_eqs, new_poly, _ = 
        List.fold_left (
         fun (es, p, ind) cnstr -> 
-          if List.mem ind cons && ind < List.length pot_eqs then
+          if List.mem ind cons && ind < List.length pot_is_to_up then
             let temp_p = add_cnstr `eq p cnstr in
             match temp_p with
             | Bot -> ind :: es, Bot, ind + 1
             | Ne pp -> ind :: es, Ne {pp with non_strict = S.remove cnstr pp.non_strict}, ind+1
+          else if List.mem ind cons && ind < List.length (pot_is_to_up @ pot_eqs) then
+            es, add_cnstr `eq p cnstr, ind + 1
+          else if List.mem ind cons && ind < List.length (pot_is_to_up @ pot_eqs @ pot_ineqs) then
+            es, add_cnstr `ge p cnstr, ind + 1
           else if List.mem ind cons then
-            es, add_cnstr `ge p cnstr, ind+1
-          else es, p, ind + 1) ([], poly, 0) (pot_eqs @ pot_ineqs) in
+            es, add_cnstr `gt p cnstr, ind+1
+          else es, p, ind + 1) ([], top_p, 0) (pot_is_to_up @ pot_eqs @ pot_ineqs @ pot_strict) in
     new_poly, new_eqs
 
 
-  let saturate_c ctx solver eqs non_strict strict form ineqs_to_check =
-    (*Log.log_line_s ~level:`trace "Saturate w.r.t formula:";
-    Log.log_line_s ~level:`trace (Z3.Expr.to_string form);
-    Log.log_line_s ~level:`trace "";
-    Log.log_line_s ~level:`trace "And Solver";
-    Log.log_line_s ~level:`trace (Z3.Solver.to_string solver);
-    Log.log_line_s ~level:`trace "";*)
+  let saturate_c ctx solver eqs non_strict strict form atoms_to_check =
+    Log.log_line_s ~level:`debug "Saturate w.r.t formula:";
+    Log.log_line_s ~level:`debug (Z3.Expr.to_string form);
+    Log.log_line_s ~level:`debug "";
+    Log.log_line_s ~level:`debug "And Solver";
+    Log.log_line_s ~level:`debug (Z3.Solver.to_string solver);
+    Log.log_line_s ~level:`debug "";
+    
 
-    let poly = Ne {eqs = S.of_list eqs; non_strict = S.of_list non_strict; strict = S.of_list strict} in
+    let poly = Ne {eqs = S.of_list (List.map (lt_normalize `eq) eqs); non_strict = S.of_list (List.map (lt_normalize `ge) non_strict); strict = S.of_list (List.map (lt_normalize `gt) strict)} in
+
+    let folder pp atom = 
+      match atom with
+      | Sigs.Form.Ge a -> 
+        if DM.is_empty (fst a) then pp
+        else 
+          add_cnstr `ge pp a
+      | Sigs.Form.Gt a -> 
+        if DM.is_empty (fst a) then pp
+        else 
+          add_cnstr `gt pp a
+      | Sigs.Form.Eq a -> 
+        if DM.is_empty (fst a) then pp
+        else
+          add_cnstr `eq pp a
+      | _ -> failwith "Not an atom"
+    in
+    
+
+    let ppp = List.fold_left folder top_p atoms_to_check in
+
+    Log.log_line_s ~level:`debug "Atoms to check: ";
+    Log.log ~level:`debug pp (Some ppp);
+
+    let (es_to_check_diff, ns_to_check_diff, ss_to_check_diff) = find_new_constraints poly ppp in
     Z3.Solver.push solver;
     Z3.Solver.add solver [form];
-    let eq_poly, non_strict_to_upgrade = discover_eqs_ineqs ctx solver poly non_strict ineqs_to_check in
+    let eq_poly, non_strict_to_upgrade = discover_eqs_ineqs ctx solver non_strict (S.to_list es_to_check_diff) (S.to_list ns_to_check_diff) (S.to_list ss_to_check_diff) in
+    
+    Log.log_line_s ~level:`debug "New cnstrs found: ";
+    Log.log ~level:`debug pp (Some eq_poly);
 
-    let _, new_ineqs, new_strict = find_new_constraints poly eq_poly in
+    let new_eqs, new_ineqs, new_strict = find_new_constraints poly eq_poly in
+    let new_eqs = S.to_list (S.diff new_eqs (S.of_list non_strict)) in
+    let new_ineqs = S.to_list new_ineqs in
+    let new_strict = S.to_list new_strict in
     Z3.Solver.pop solver 1;
-    let z3_new_eqs = List.map (cntsr_to_z3 `eq ctx) (List.map (List.nth non_strict) non_strict_to_upgrade) in
+    let z3_new_eqs = List.map (cntsr_to_z3 `eq ctx) (new_eqs @ (List.map (List.nth non_strict) non_strict_to_upgrade)) in
     let z3_new_ineqs = List.map (cntsr_to_z3 `ge ctx) new_ineqs in
-    let z3_new_strict = List.map (cntsr_to_z3 `gt ctx) new_strict in (* not sure about this *)
+    let z3_new_strict = List.map (cntsr_to_z3 `gt ctx) new_strict in
     Z3.Solver.add solver (z3_new_eqs @ z3_new_ineqs @ z3_new_strict);
-    non_strict_to_upgrade, new_ineqs, new_strict
+    non_strict_to_upgrade, new_eqs, new_ineqs, new_strict
   
 
   type bound = NoBound | Upper of polyhedron | Lower of polyhedron | Both of polyhedron
@@ -1212,6 +1265,7 @@ module Make (C : Sigs.Coefficient)(V : Sigs.Var) = struct
         (List.fold_left (fun p l -> let l_neg = lt_negate l in let lb = DM.add fresh_dim C.one (fst l_neg), snd l_neg in add_cnstr `ge p lb) top_p (snd bounds)) (fst bounds) in
     let (real_uppers, real_lowers, _, _) = check_bounds ctx fresh_dim t solver p_bound in
     let (real_uppers_l, real_lowers_l) = (S.to_list real_uppers, S.to_list real_lowers) in
+
     let ups = 
       if List.exists (DM.is_empty % fst) real_uppers_l then 
         let min_const, others = 
